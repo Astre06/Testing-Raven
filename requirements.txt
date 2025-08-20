@@ -1,0 +1,7 @@
+requests
+fake-useragent
+colorama
+termcolor
+beautifulsoup4
+lxml
+rarfile
