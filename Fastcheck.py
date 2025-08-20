@@ -422,7 +422,7 @@ def process_file_and_check(input_file, live=False):
         elif file_ext == '.rar':
             log(f"📦 RAR archive detected. Extracting...")
             try:
-                rarfile.UNRAR_TOOL = "UnRAR.exe"
+                rarfile.UNRAR_TOOL = "/usr/bin/unrar"
                 os.makedirs(extract_dir, exist_ok=True)
                 with rarfile.RarFile(input_file, 'r') as rar_ref:
                     rar_ref.extractall(extract_dir)
@@ -474,3 +474,4 @@ if __name__ == "__main__":
     results = main(test_files)
     if results:
         print(f"Results saved to: {results}")
+
