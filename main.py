@@ -295,30 +295,12 @@ async def process_file_with_mode(update, file_path, file_name, mode, reply_to_me
 
 # --- Command: /start ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    welcome_text = """🍿 **Netflix Cookie Checker Bot**
-
-📋 **How to use:**
-
-**Method 1: Auto-detection**
-Just send a file and I'll detect the mode from filename!
-
-**Method 2: Reply with commands**
+    welcome_text = """Raven NF Checker**
+    
 Send a file, then reply to it with:
 • `/fastcheck` - Quick validation
 • `/slowcheck` - Thorough validation  
 • `/logout` - Logout check
-
-**Method 3: Reply to results**
-When I send you results, reply to that file with commands to recheck!
-
-🔍 **Auto-detection keywords:**
-• **Fast:** 'fast', 'quick', 'rapid' in filename
-• **Slow:** 'slow', 'thorough', 'deep', 'full' in filename  
-• **Logout:** 'logout', 'signout', 'exit' in filename
-
-📁 **Supported formats:** .txt, .zip, .rar
-
-💡 **Clean mode:** Processing messages auto-delete for clean conversation!
     """
     await update.message.reply_text(welcome_text, parse_mode='Markdown')
 
@@ -483,3 +465,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
