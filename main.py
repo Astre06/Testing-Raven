@@ -252,7 +252,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pass
 
 # --- Helper: Process file with specific mode (SENDS BOTH VALID AND INVALID TO GROUP) ---
-async def process_file_with_mode(update, context, file_path, file_name, mode, clean_format, reply_to_message=None):
+async def process_file_with_mode(update, file_path, file_name, mode, clean_format=None, reply_to_message=None):
     """Process a file with the specified checking mode"""
     global global_stop_flag
 
@@ -935,4 +935,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
