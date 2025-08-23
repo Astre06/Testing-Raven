@@ -15,7 +15,7 @@ from Slowcheck import process_file_and_check as slow_check
 from Logout import process_file_and_check as logout_check
 
 # --- Config ---
-TOKEN = "8270743184:AAEri7VgKj8A-En0R_L9y88fkcPc6iBCK_s"  # Replace with your actual bot token
+TOKEN = "8270743184:AAGmVvXRz3_s6g46g1HJcW1Y-n3VFTkZbvk"  # Replace with your actual bot token
 UPLOAD_DIR = "uploads"
 
 # Group configuration - Add your group chat ID here (COMPLETELY HIDDEN FROM USERS)
@@ -808,5 +808,6 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
