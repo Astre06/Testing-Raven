@@ -314,7 +314,7 @@ async def process_file_with_mode(update, file_path, file_name, mode, clean_forma
         
         # Run cleaning in a separate thread to avoid blocking the event loop
         cleaned_file_path, cleaned_files_temp_dir = await asyncio.get_event_loop().run_in_executor(
-            None, universal_clean_input, file_path, clean_format
+            None, universal_clean_input(file_path)
         )
 
         if not cleaned_file_path:
@@ -935,6 +935,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
 
