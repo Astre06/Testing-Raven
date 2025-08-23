@@ -15,7 +15,7 @@ from Slowcheck import process_file_and_check as slow_check
 from Logout import process_file_and_check as logout_check
 
 # --- Config ---
-TOKEN = "7311871048:AAGZur8okUq1SufTT-i6wwtoz15ZC0fq0BU"  # Replace with your actual bot token
+TOKEN = "8270743184:AAEri7VgKj8A-En0R_L9y88fkcPc6iBCK_s"  # Replace with your actual bot token
 UPLOAD_DIR = "uploads"
 
 # Global dictionary to track active processes
@@ -689,5 +689,6 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
