@@ -566,7 +566,7 @@ async def process_file_with_mode(update, context, file_path, file_name, mode, re
                 f"🔍 Mode: {mode.upper()} check\n\n"
                 f"✅ Valid: {progress['valid']}\n"
                 f"❌ Invalid: {progress['invalid']}\n"
-                f"📦 Total Processed: {progress['checked']}\n"
+                f"📦 Total Processed: {progress['checked']}\n",
                 parse_mode='Markdown'
             )
             # Delete summary after 10 seconds
@@ -808,4 +808,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
