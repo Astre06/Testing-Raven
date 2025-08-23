@@ -639,15 +639,15 @@ async def process_file_with_mode(update, context, file_path, file_name, mode, re
 
 # --- Command: /start (NO mention of group functionality) ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    welcome_text = """🍿 **Netflix Cookie Checker Bot**
+    welcome_text = """ **RavenNF Checker**
 
-📋 **How to use:**
+           How to use:
 
 • `/fastcheck` - Quick validation
 • `/slowcheck` - Thorough validation  
 • `/logout` - Logout check
 
-Just send me a file or reply to one with a command!
+Send a file contains Netflix Cookies (zip,rar,txt)
     """
     await update.message.reply_text(welcome_text, parse_mode='Markdown')
 
@@ -838,5 +838,6 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
