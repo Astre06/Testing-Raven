@@ -228,10 +228,10 @@ def clean_file_by_type(input_path, root_output_dir):
 
 
 # --- UNIVERSAL ENTRY POINT ---
-def universal_clean_input(input_path: str) -> str:
+def universal_clean_input(input_path: str, _clean_format=None) -> str:
     """
     Cleans a single file or archive into root folder with structured subfolders.
-    Returns the root folder path containing all cleaned files.
+    The second argument (clean_format) is ignored for compatibility.
     """
     input_dir = os.path.dirname(input_path)
     base_name = os.path.splitext(os.path.basename(input_path))[0]
@@ -259,3 +259,4 @@ if __name__ == "__main__":
     test_file = input("Enter file path to clean: ").strip()
     cleaned = universal_clean_input(test_file)
     print(f"✅ Cleaned output saved in: {cleaned}")
+
