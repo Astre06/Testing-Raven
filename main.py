@@ -622,10 +622,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • `/fastcheck` - Quick validation
 • `/slowcheck` - Thorough validation  
 • `/logout` - Logout check
-
-📢 **Group Sharing:** {group_status}
-
-Just send me a file or reply to one with a command!
     """
     await update.message.reply_text(welcome_text, parse_mode='Markdown')
 
@@ -820,5 +816,6 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
