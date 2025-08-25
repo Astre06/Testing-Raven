@@ -24,10 +24,17 @@ async def auto_delete_message(msg, delay: int = 15):
         await msg.delete()
 
 async def auto_cleanup_directory(directory: str, delay: int = 2):
-    """Cleanup a directory after delay seconds without blocking."""
+    """Delete a directory after delay seconds without blocking the bot."""
     await asyncio.sleep(delay)
     if directory and os.path.exists(directory):
         cleanup_directory(directory)
+async def delayed_retry_download(tg_file, file_path, delay: int = 3, timeout: int = 180):
+    """Retry downloading a Telegram file after a delay without blocking."""
+    await asyncio.sleep(delay)
+    await tg_file.download_to_drive(file_path, read_timeout=timeout)
+    print(f"📥 File saved on retry: {file_path}")
+    return file_path
+
 
 
 # Global variables
@@ -71,10 +78,7 @@ async def save_uploaded_file(tg_file, file_unique_id: str, file_name: str) -> st
         return file_path
     except Exception as e:
         print(f"⚠️ Download failed once, retrying... Error: {e}")
-        await asyncio.sleep(3)
-        await tg_file.download_to_drive(file_path, read_timeout=180)
-        print(f"📥 File saved on retry: {file_path}")
-        return file_path
+        return await delayed_retry_download(tg_file, file_path, delay=3, timeout=180)
 
         
     except Exception as e:
@@ -705,13 +709,11 @@ async def logout_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await handle_command_reply(update, context, 'logout')
 
 async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /stop command - stop all processes"""
     global global_stop_flag
     
     if active_processes:
         global_stop_flag = True
         
-        # Set stop flag for all active processes
         for process_id in active_processes:
             active_processes[process_id]["stop_flag"] = True
         
@@ -721,21 +723,24 @@ async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Please wait while processes are terminated safely.",
             parse_mode='Markdown'
         )
-        
-        # Wait a bit for processes to stop
-        await asyncio.sleep(2)
-        
-        await update.message.reply_text(
-            f"✅ **All processes stopped!**\n\n"
-            f"You can now upload new files or start new checks.",
-            parse_mode='Markdown'
-        )
+
+        # instead of blocking sleep:
+        async def confirm_stop():
+            await asyncio.sleep(2)
+            await update.message.reply_text(
+                f"✅ **All processes stopped!**\n\n"
+                f"You can now upload new files or start new checks.",
+                parse_mode='Markdown'
+            )
+        asyncio.create_task(confirm_stop())
+
     else:
         await update.message.reply_text(
             "ℹ️ **No active processes**\n\n"
             "There are currently no running checks to stop.",
             parse_mode='Markdown'
         )
+
 
 async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle inline keyboard button presses"""
