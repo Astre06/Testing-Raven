@@ -23,6 +23,12 @@ async def auto_delete_message(msg, delay: int = 15):
     with contextlib.suppress(Exception):
         await msg.delete()
 
+async def auto_cleanup_directory(directory: str, delay: int = 2):
+    """Cleanup a directory after delay seconds without blocking."""
+    await asyncio.sleep(delay)
+    if directory and os.path.exists(directory):
+        cleanup_directory(directory)
+
 
 # Global variables
 active_processes: Dict[str, Dict] = {}
@@ -392,11 +398,8 @@ async def process_file_with_mode(update: Update, cleaned_txt_files: List[str], o
             await status_msg.delete()
 
         # Delay cleanup slightly to ensure Telegram reads files
-        await asyncio.sleep(2)
-        if results_dir and os.path.exists(results_dir):
-            cleanup_directory(results_dir)
-            print(f"🗑️ Cleaned up results directory: {results_dir}")
-
+        # Schedule cleanup without blocking
+        asyncio.create_task(auto_cleanup_directory(results_dir, delay=2))
 
     finally:
         print(f"🧹 Cleaning up process {process_id}...")
