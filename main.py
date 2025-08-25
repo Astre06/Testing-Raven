@@ -603,10 +603,11 @@ async def handle_command_reply(update: Update, context: ContextTypes.DEFAULT_TYP
             if not cleaned_txt_files:
                 temp_msg = await update.message.reply_text(
                     f"❌ <b>No Valid Cookies Found</b><br><br>"
-                    f"File <code>{original_filename}</code> was processed but no valid cookies were found.",
+                    f"File <code>{replied_message.document.file_name}</code> was processed but no valid cookies were found.",
                     parse_mode='HTML'
                 )
-                asyncio.create_task(auto_delete_message(msg, delay=30))
+                asyncio.create_task(auto_delete_message(temp_msg, delay=30))
+
 
             # Delete the command message to keep chat clean
             try:
