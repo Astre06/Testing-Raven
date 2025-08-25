@@ -309,7 +309,7 @@ async def process_file_with_mode(update: Update, cleaned_txt_files: List[str], o
             msg = await update.message.reply_document(open(zip_path, "rb"), caption="✅ Valid Results (ZIP)")
     else:
         msg = await update.message.reply_text("⚠️ No ✅ Valid cookies found.")
-        asyncio.create_task(auto_delete_message(msg, delay=15))
+        asyncio.create_task(auto_delete_message(msg, delay=5))
 
     # Send invalid results
     if progress['invalid'] > 0 and invalid_files:
@@ -323,7 +323,7 @@ async def process_file_with_mode(update: Update, cleaned_txt_files: List[str], o
             msg = await update.message.reply_document(open(zip_path, "rb"), caption="❌ Invalid Results (ZIP)")
     else:
         msg = await update.message.reply_text("⚠️ No ❌ Invalid cookies found.")
-        asyncio.create_task(auto_delete_message(msg, delay=30))
+        asyncio.create_task(auto_delete_message(msg, delay=5))
 
     # Cleanup results dir after send
     asyncio.create_task(auto_cleanup_directory(results_dir, delay=2))
@@ -689,3 +689,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
