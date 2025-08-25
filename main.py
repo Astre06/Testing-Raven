@@ -17,6 +17,13 @@ from Fastcheck import run_check_on_file_list as fast_check
 from Slowcheck import run_check_on_file_list as slow_check
 from Logout import run_check_on_file_list as logout_check
 
+async def auto_delete_message(msg, delay: int = 15):
+    """Delete a Telegram message after `delay` seconds without blocking."""
+    await asyncio.sleep(delay)
+    with contextlib.suppress(Exception):
+        await msg.delete()
+
+
 # Global variables
 active_processes: Dict[str, Dict] = {}
 global_stop_flag = False
@@ -333,10 +340,9 @@ async def process_file_with_mode(update: Update, cleaned_txt_files: List[str], o
         )
         if final_elapsed > 0:
             completion_text += f"\n📉 Speed: {progress['total']/final_elapsed:.1f} checks/sec"
-        summary_msg = await (reply_to_message or update.message).reply_text(completion_text, parse_mode='HTML')
-        await asyncio.sleep(5)
-        with contextlib.suppress(Exception):
-            await summary_msg.delete()
+        summary_msg = await update.message.reply_text(completion_text, parse_mode='HTML')
+        asyncio.create_task(auto_delete_message(summary_msg, delay=5))
+
 
         # Collect results before cleanup
         valid_files, invalid_files = [], []
@@ -364,9 +370,8 @@ async def process_file_with_mode(update: Update, cleaned_txt_files: List[str], o
                 await update.message.reply_document(open(zip_path, "rb"), caption="✅ Valid Results (ZIP)")
         else:
             msg = await update.message.reply_text("⚠️ No ✅ Valid cookies found.")
-            await asyncio.sleep(5)
-            with contextlib.suppress(Exception):
-                await msg.delete()
+            asyncio.create_task(auto_delete_message(msg, delay=15))
+
 
         # --- Send invalid results ---
         if progress['invalid'] > 0 and invalid_files:
@@ -380,10 +385,7 @@ async def process_file_with_mode(update: Update, cleaned_txt_files: List[str], o
                 msg = await update.message.reply_document(open(zip_path, "rb"), caption="❌ Invalid Results (ZIP)")
         else:
             msg = await update.message.reply_text("⚠️ No ❌ Invalid cookies found.")
-            await asyncio.sleep(5)
-            with contextlib.suppress(Exception):
-                await msg.delete()
-
+            asyncio.create_task(auto_delete_message(msg, delay=30))
 
         # Delay cleanup slightly to ensure Telegram reads files
         with contextlib.suppress(Exception):
@@ -482,12 +484,7 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 
                 # Auto-delete message after 15 seconds
-                await asyncio.sleep(15)
-                try:
-                    await temp_msg.delete()
-                except Exception:
-                    pass
-                return
+                asyncio.create_task(auto_delete_message(temp_msg, delay=15))
 
             # Step 3: Process the cleaned .txt files
             await process_file_with_mode(
@@ -606,12 +603,7 @@ async def handle_command_reply(update: Update, context: ContextTypes.DEFAULT_TYP
                     f"File <code>{original_filename}</code> was processed but no valid cookies were found.",
                     parse_mode='HTML'
                 )
-                await asyncio.sleep(5)
-                try:
-                    await temp_msg.delete()
-                except Exception:
-                    pass
-                return
+                asyncio.create_task(auto_delete_message(msg, delay=30))
 
             # Delete the command message to keep chat clean
             try:
