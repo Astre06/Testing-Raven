@@ -1,262 +1,195 @@
 import os
 import re
 import json
-import zipfile
 import tempfile
-import shutil
+import zipfile
+import rarfile
+import logging
 
-# Try to import rarfile, if not available, skip RAR support
-try:
-    import rarfile
-    RAR_SUPPORT = True
-except ImportError:
-    RAR_SUPPORT = False
-    print("rarfile not installed. RAR support disabled. Install with: pip install rarfile")
+# Logging setup
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
+
+# NetflixId regex
+pattern = re.compile(r"NetflixId=[^\s|]+")
 
 
-# --- HELPER FUNCTION FOR ROBUST JSON FINDING ---
-def find_all_json_objects(text: str) -> list:
-    """
-    Finds and decodes all valid JSON objects (dictionaries) from a string,
-    even if they are not in a list or are surrounded by other text.
-    """
-    found_objects = []
+# ----------------- Netscape Processor -----------------
+def process_netscape_format(input_path, output_dir):
+    try:
+        with open(input_path, 'r', encoding='utf-8', errors='ignore') as f:
+            all_lines = f.readlines()
+
+        cookie_groups = []
+        current_group = []
+
+        for line in all_lines:
+            line = line.strip()
+            if line.startswith('.'):
+                current_group.append(line)
+            else:
+                if current_group:
+                    cookie_groups.append(current_group[:])
+                    current_group = []
+
+        if current_group:
+            cookie_groups.append(current_group)
+
+        if not cookie_groups:
+            return []
+
+        created_files = []
+        base_name = os.path.splitext(os.path.basename(input_path))[0]
+
+        for idx, group_lines in enumerate(cookie_groups):
+            output_filename = os.path.join(output_dir, f"{base_name}_netscape_{idx+1}.txt")
+            with open(output_filename, 'w', encoding='utf-8') as outfile:
+                outfile.write("# Netscape HTTP Cookie File\n")
+                for cookie_line in group_lines:
+                    outfile.write(cookie_line + '\n')
+
+            created_files.append(output_filename)
+            logging.info(f"Created {output_filename} with {len(group_lines)} Netscape lines")
+
+        return created_files
+
+    except Exception as e:
+        logging.error(f"Error processing Netscape file {input_path}: {e}")
+        return []
+
+
+# ----------------- JSON Processor -----------------
+def find_all_json_objects(content):
+    """Helper: Extracts all JSON objects from a raw string safely."""
+    decoder = json.JSONDecoder()
     pos = 0
-    while pos < len(text):
-        start_brace = text.find('{', pos)
-        if start_brace == -1:
+    results = []
+    while True:
+        match = re.search(r"\{", content[pos:])
+        if not match:
             break
-
-        brace_level = 1
-        end_brace = -1
-        for i in range(start_brace + 1, len(text)):
-            char = text[i]
-            if char == '{':
-                brace_level += 1
-            elif char == '}':
-                brace_level -= 1
-                if brace_level == 0:
-                    end_brace = i
-                    break
-        
-        if end_brace != -1:
-            potential_json = text[start_brace : end_brace + 1]
-            try:
-                decoded_obj = json.loads(potential_json)
-                if isinstance(decoded_obj, dict):
-                    found_objects.append(decoded_obj)
-            except json.JSONDecodeError:
-                pass
-            pos = end_brace + 1
-        else:
-            break
-            
-    return found_objects
+        try:
+            obj, idx = decoder.raw_decode(content[pos + match.start():])
+            results.append(obj)
+            pos += match.start() + idx
+        except Exception:
+            pos += match.start() + 1
+    return results
 
 
-# --- ARCHIVE EXTRACTION ---
-def extract_archive(archive_path, extract_to):
-    """
-    Extracts ZIP or RAR files to a temporary directory.
-    Returns the extraction directory path or None if failed.
-    """
+def process_json_format(input_path, output_dir):
+    base_name = os.path.splitext(os.path.basename(input_path))[0]
+    output_filename = os.path.join(output_dir, f"{base_name}_JSON_Cleaned.txt")
+
     try:
-        file_ext = os.path.splitext(archive_path)[1].lower()
-        
-        if file_ext == '.zip':
-            with zipfile.ZipFile(archive_path, 'r') as zip_ref:
-                zip_ref.extractall(extract_to)
-            return extract_to
-        elif file_ext == '.rar' and RAR_SUPPORT:
-            with rarfile.RarFile(archive_path, 'r') as rar_ref:
-                rar_ref.extractall(extract_to)
-            return extract_to
-        else:
-            return None
+        with open(input_path, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+
+        all_found_cookies = find_all_json_objects(content)
+
+        if not all_found_cookies:
+            return []
+
+        netflix_cookies = [c for c in all_found_cookies if 'netflix.com' in c.get('domain', '')]
+
+        if not netflix_cookies:
+            return []
+
+        with open(output_filename, 'w', encoding='utf-8') as outfile:
+            json.dump(netflix_cookies, outfile, indent=4)
+
+        logging.info(f"Created {output_filename} with {len(netflix_cookies)} JSON cookies")
+        return [output_filename]
+
     except Exception as e:
-        print(f"Error extracting {archive_path}: {e}")
-        return None
+        logging.error(f"Error processing JSON file {input_path}: {e}")
+        return []
 
 
-def find_all_txt_files(directory):
-    """
-    Recursively finds all .txt files in a directory and subdirectories.
-    """
-    txt_files = []
-    for root, dirs, files in os.walk(directory):
-        for file in files:
-            if file.lower().endswith('.txt'):
-                txt_files.append(os.path.join(root, file))
-    return txt_files
+# ----------------- NetflixId Regex Processor -----------------
+def process_netflixid_format(path, outdir):
+    base = os.path.splitext(os.path.basename(path))[0]
+    output_file = os.path.join(outdir, f"{base}_netflixid.txt")
 
-
-# --- DETECTION ---
-def detect_cookie_type(file_path: str) -> str:
-    """
-    Detects cookie type by scanning the whole file.
-    Priority:
-        1. Netscape if any line starts with '.'
-        2. JSON if any line starts with '[' or '{'
-        3. NetflixId if any line contains 'NetflixId='
-        4. Unknown otherwise
-    """
-    try:
-        has_netscape = False
-        has_json = False
-        has_netflixid = False
-
-        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-
-                if line.startswith("."):      # strongest rule
-                    return "netscape"
-                elif line.startswith("[") or line.startswith("{"):
-                    has_json = True
-                elif "NetflixId=" in line:
-                    has_netflixid = True
-
-        if has_json:
-            return "json"
-        if has_netflixid:
-            return "netflix_id"
-    except Exception as e:
-        print(f"Error detecting cookie type for {file_path}: {e}")
-
-    return "unknown"
-
-
-# --- CLEANING FUNCTIONS ---
-def clean_netflix_id(input_path, output_dir):
-    """Create 1 folder with 1 notepad.txt, each line = NetflixId cookie"""
-    os.makedirs(output_dir, exist_ok=True)
-    out_file = os.path.join(output_dir, "notepad.txt")
-
-    count = 0
-    with open(input_path, 'r', encoding='utf-8', errors='ignore') as infile, \
-         open(out_file, 'w', encoding='utf-8') as outfile:
+    with open(path, "r", encoding="utf-8", errors="ignore") as infile, \
+         open(output_file, "w", encoding="utf-8") as outfile:
         for line in infile:
-            if "NetflixId=" in line:
-                cookie_parts = []
-                netflix_id = re.search(r'NetflixId=([^;]+)', line)
-                secure_id = re.search(r'SecureNetflixId=([^;]+)', line)
-                nfvdid = re.search(r'nfvdid=([^;]+)', line)
+            match = pattern.search(line)
+            if match:
+                outfile.write(match.group(0) + "\n")
 
-                if netflix_id: cookie_parts.append(netflix_id.group(0))
-                if secure_id: cookie_parts.append(secure_id.group(0))
-                if nfvdid: cookie_parts.append(nfvdid.group(0))
-
-                if cookie_parts:
-                    outfile.write("; ".join(cookie_parts) + "\n")
-                    count += 1
-    return count
+    logging.info(f"Created {output_file} with NetflixId matches")
+    return [output_file]
 
 
-def clean_netscape(input_path, output_dir):
-    """Create subfolder and split each .cookie group into separate file"""
-    os.makedirs(output_dir, exist_ok=True)
+# ----------------- File Router -----------------
+def process_text_file(path, outdir):
+    """Strict priority: Netscape > JSON > NetflixId (search in all lines)."""
+    try:
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            lines = [l.strip() for l in f.readlines() if l.strip()]
 
-    count = 0
-    with open(input_path, 'r', encoding='utf-8', errors='ignore') as infile:
-        lines = [l.strip() for l in infile]
+        if any(line.startswith(".") for line in lines):
+            logging.info(f"Detected Netscape format in {path}")
+            return process_netscape_format(path, outdir)
 
-    group = []
-    for line in lines:
-        if line.startswith("."):
-            group.append(line)
-        else:
-            if group:
-                count += 1
-                out_file = os.path.join(output_dir, f"cookie{count}.txt")
-                with open(out_file, 'w', encoding='utf-8') as f:
-                    f.write("# Netscape HTTP Cookie File\n")
-                    f.write("\n".join(group) + "\n")
-                group = []
-    if group:
-        count += 1
-        out_file = os.path.join(output_dir, f"cookie{count}.txt")
-        with open(out_file, 'w', encoding='utf-8') as f:
-            f.write("# Netscape HTTP Cookie File\n")
-            f.write("\n".join(group) + "\n")
-    return count
+        if any(line.startswith("[") for line in lines):
+            logging.info(f"Detected JSON format in {path}")
+            return process_json_format(path, outdir)
+
+        logging.info(f"Fallback: NetflixId regex for {path}")
+        return process_netflixid_format(path, outdir)
+
+    except Exception as e:
+        logging.error(f"Router failed for {path}: {e}")
+        return []
 
 
-def clean_json(input_path, output_dir):
-    """Create subfolder and split JSON objects into cookie1.txt, cookie2.txt..."""
-    os.makedirs(output_dir, exist_ok=True)
-
-    count = 0
-    with open(input_path, 'r', encoding='utf-8', errors='ignore') as infile:
-        content = infile.read()
-
-    objects = find_all_json_objects(content)
-
-    for obj in objects:
-        if "netflix.com" in obj.get("domain", ""):
-            count += 1
-            out_file = os.path.join(output_dir, f"cookie{count}.txt")
-            with open(out_file, 'w', encoding='utf-8') as f:
-                json.dump(obj, f, indent=4)
-    return count
-
-
-# --- CLEAN WRAPPER PER FILE ---
-def clean_file_by_type(input_path, root_output_dir):
+# ----------------- Universal Cleaner (entrypoint for main.py) -----------------
+def universal_clean_input(input_file: str) -> str:
     """
-    Detects cookie type and cleans accordingly into structured subfolders.
-    Returns path of subfolder created.
+    Cleans the uploaded file and returns a temp directory
+    containing processed .txt cookie files.
     """
-    ctype = detect_cookie_type(input_path)
-    print(f"Detected cleaning format: {ctype}")  # helpful debug
+    temp_dir = tempfile.mkdtemp(prefix="cleaned_")
+    processed_files = []
 
-    base_name = os.path.splitext(os.path.basename(input_path))[0]
-    sub_output = os.path.join(root_output_dir, base_name)
-    os.makedirs(sub_output, exist_ok=True)
+    try:
+        if input_file.endswith(".txt"):
+            processed_files.extend(process_text_file(input_file, temp_dir))
 
-    if ctype == "netflix_id":
-        clean_netflix_id(input_path, sub_output)
-    elif ctype == "netscape":
-        clean_netscape(input_path, sub_output)
-    elif ctype == "json":
-        clean_json(input_path, sub_output)
-    else:
-        clean_netflix_id(input_path, sub_output)
+        elif input_file.endswith(".zip"):
+            with zipfile.ZipFile(input_file, "r") as archive:
+                archive.extractall(temp_dir)
+            for root, _, files in os.walk(temp_dir):
+                for f in files:
+                    if f.endswith(".txt"):
+                        processed_files.extend(process_text_file(os.path.join(root, f), temp_dir))
 
-    return sub_output
+        elif input_file.endswith(".rar"):
+            with rarfile.RarFile(input_file, "r") as archive:
+                archive.extractall(temp_dir)
+            for root, _, files in os.walk(temp_dir):
+                for f in files:
+                    if f.endswith(".txt"):
+                        processed_files.extend(process_text_file(os.path.join(root, f), temp_dir))
 
+        logging.info(f"✅ Cleaning finished. Created {len(processed_files)} file(s).")
+        return temp_dir
 
-# --- UNIVERSAL ENTRY POINT ---
-def universal_clean_input(input_path: str, _clean_format=None) -> str:
-    """
-    Cleans a single file or archive into root folder with structured subfolders.
-    The second argument (clean_format) is ignored for compatibility.
-    """
-    input_dir = os.path.dirname(input_path)
-    base_name = os.path.splitext(os.path.basename(input_path))[0]
-    root_output_dir = os.path.join(input_dir, f"{base_name}_CLEANED")
-    os.makedirs(root_output_dir, exist_ok=True)
-
-    file_ext = os.path.splitext(input_path)[1].lower()
-
-    if file_ext in [".zip", ".rar"]:
-        temp_dir = tempfile.mkdtemp()
-        extracted_dir = extract_archive(input_path, temp_dir)
-        if extracted_dir:
-            txt_files = find_all_txt_files(extracted_dir)
-            for f in txt_files:
-                clean_file_by_type(f, root_output_dir)
-        shutil.rmtree(temp_dir)
-    else:
-        clean_file_by_type(input_path, root_output_dir)
-
-    return root_output_dir
+    except Exception as e:
+        logging.error(f"Critical error in universal_clean_input: {e}")
+        return temp_dir
 
 
-# --- MAIN (for testing standalone) ---
-if __name__ == "__main__":
-    test_file = input("Enter file path to clean: ").strip()
-    cleaned = universal_clean_input(test_file)
-    print(f"✅ Cleaned output saved in: {cleaned}")
-
+# ----------------- Cleanup Helper -----------------
+def cleanup_directory(directory: str):
+    """Delete a directory and all its contents."""
+    import shutil
+    try:
+        shutil.rmtree(directory, ignore_errors=True)
+        logging.info(f"🗑️ Cleaned up directory: {directory}")
+    except Exception as e:
+        logging.error(f"⚠️ Failed to clean directory {directory}: {e}")
