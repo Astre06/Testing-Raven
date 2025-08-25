@@ -307,7 +307,6 @@ async def process_file_with_mode(update: Update, cleaned_txt_files: List[str], o
                 for f in valid_files:
                     zf.write(f, os.path.basename(f))
             msg = await update.message.reply_document(open(zip_path, "rb"), caption="✅ Valid Results (ZIP)")
-        asyncio.create_task(auto_delete_message(msg, delay=30))
     else:
         msg = await update.message.reply_text("⚠️ No ✅ Valid cookies found.")
         asyncio.create_task(auto_delete_message(msg, delay=15))
@@ -322,7 +321,6 @@ async def process_file_with_mode(update: Update, cleaned_txt_files: List[str], o
                 for f in invalid_files:
                     zf.write(f, os.path.basename(f))
             msg = await update.message.reply_document(open(zip_path, "rb"), caption="❌ Invalid Results (ZIP)")
-        asyncio.create_task(auto_delete_message(msg, delay=30))
     else:
         msg = await update.message.reply_text("⚠️ No ❌ Invalid cookies found.")
         asyncio.create_task(auto_delete_message(msg, delay=30))
