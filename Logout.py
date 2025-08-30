@@ -171,12 +171,10 @@ def netflix_signout_all_devices_integrated(page, context):
             # Locate the "Sign Out of All Devices" button (anchor with class soad-button)
             signout_all = page.locator("a.soad-button, button.soad-button, .soad-button[role='button']")
 
-            try:
+            if
                 signout_all.first.wait_for(state="visible", timeout=10000)
                 signout_all.first.click(timeout=5000)
                 log("[🖱️] Clicked 'Sign Out of All Devices' (soad-button)")
-                except Exception:
-                    log("[⚠️] Could not find or click main sign-out button (.soad-button)")
 
                 # Locate confirmation button by stable data-uia
                 confirm = page.locator('[data-uia="btn-sign-out"]')
@@ -691,6 +689,7 @@ if __name__ == "__main__":
             print("LIVE UPDATE:", update)
     else:
         print(f"Results saved to: {results}")
+
 
 
 
