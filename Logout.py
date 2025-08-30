@@ -155,43 +155,36 @@ def extract_email_from_html(html_content: str) -> str:
 def netflix_signout_all_devices_integrated(page, context):
     """
     Integrated sign-out function that works with existing browser context.
-    Uses Netflix's data-uia attributes to work across all languages.
-    Returns updated cookies after sign-out.
+    Updated with Netflix's real HTML structure:
+      - First button: <a class="soad-button">...</a>
+      - Confirm button: <button data-uia="btn-sign-out">...</button>
     """
-    with signout_lock:  # Prevent multiple sign-out operations simultaneously
+    with signout_lock:
         try:
             log("[🔄] Starting sign-out process...")
-            time.sleep(random.uniform(1, 2))  # Small delay
+            time.sleep(random.uniform(1, 2))
 
             # Navigate to device management page
             page.goto("https://www.netflix.com/ManageDevices", timeout=20000)
             page.wait_for_load_state("networkidle", timeout=10000)
 
-            # Handle sign-out process using data-uia selectors
-            signout_all = page.locator('[data-uia="sign-out-all-devices"]')
-            confirm = page.locator('[data-uia="sign-out-button"]')
+            # Locate the "Sign Out of All Devices" button (anchor with class soad-button)
+            signout_all = page.locator("a.soad-button")
 
             if signout_all.count() > 0:
-                # Two-step process: click main button then confirm
-                signout_all.first.wait_for(timeout=8000)
                 signout_all.first.click(timeout=5000)
-                log("[🖱️] Clicked 'Sign Out of All Devices'")
+                log("[🖱️] Clicked 'Sign Out of All Devices' (soad-button)")
 
+                # Locate confirmation button by stable data-uia
+                confirm = page.locator('[data-uia="btn-sign-out"]')
                 if confirm.count() > 0:
-                    confirm.first.wait_for(timeout=8000)
                     confirm.first.click(timeout=5000, force=True)
-                    log("[✅] Confirmed sign-out")
+                    log("[✅] Confirmed sign-out (btn-sign-out)")
                 else:
                     log("[⚠️] Confirmation button not found after clicking main button")
 
-            elif confirm.count() > 0:
-                # Direct sign-out (single step)
-                confirm.first.wait_for(timeout=8000)
-                confirm.first.click(timeout=5000, force=True)
-                log("[✅] Direct sign-out completed")
-
             else:
-                log("[⚠️] No sign-out button found (layout or selector issue)")
+                log("[⚠️] Could not find main sign-out button (.soad-button)")
             
             # Wait for process to complete
             page.wait_for_load_state("networkidle", timeout=10000)
@@ -695,5 +688,6 @@ if __name__ == "__main__":
             print("LIVE UPDATE:", update)
     else:
         print(f"Results saved to: {results}")
+
 
 
