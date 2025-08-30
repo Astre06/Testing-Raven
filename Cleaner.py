@@ -167,7 +167,8 @@ def universal_clean_input(input_file: str) -> str:
                 for f in files:
                     if f.endswith(".txt"):
                         processed_files.extend(process_text_file(os.path.join(root, f), temp_dir))
-
+                        os.remove(file_path)  # ✅ delete the raw extracted file
+                        processed_files.extend(processed)
         elif input_file.endswith(".rar"):
             with rarfile.RarFile(input_file, "r") as archive:
                 archive.extractall(temp_dir)
@@ -175,6 +176,8 @@ def universal_clean_input(input_file: str) -> str:
                 for f in files:
                     if f.endswith(".txt"):
                         processed_files.extend(process_text_file(os.path.join(root, f), temp_dir))
+                        os.remove(file_path)  # ✅ delete the raw extracted file
+                        processed_files.extend(processed)
 
         logging.info(f"✅ Cleaning finished. Created {len(processed_files)} file(s).")
         return temp_dir
@@ -193,3 +196,4 @@ def cleanup_directory(directory: str):
         logging.info(f"🗑️ Cleaned up directory: {directory}")
     except Exception as e:
         logging.error(f"⚠️ Failed to clean directory {directory}: {e}")
+
