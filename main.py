@@ -75,20 +75,12 @@ async def save_uploaded_file(tg_file, file_unique_id: str, file_name: str) -> st
     safe_filename = f"{file_unique_id}_{file_name}"
     file_path = os.path.join(temp_dir, safe_filename)
     try:
-        await tg_file.download(file_path)  # ✅ use download instead of download_to_drive
+        await tg_file.download_to_drive(file_path, read_timeout=500)
         print(f"📥 File saved: {file_path}")
         return file_path
     except Exception as e:
         print(f"⚠️ Download failed once, retrying... Error: {e}")
         return await delayed_retry_download(tg_file, file_path, delay=3, timeout=180)
-
-
-async def delayed_retry_download(tg_file, file_path, delay: int = 3, timeout: int = 180):
-    """Retry downloading a Telegram file after delay without blocking."""
-    await asyncio.sleep(delay)
-    await tg_file.download(file_path)   # ✅ same change here
-    print(f"📥 File saved on retry: {file_path}")
-    return file_path
 
 def create_status_keyboard(valid_count: int, invalid_count: int, process_id: str) -> InlineKeyboardMarkup:
     """Create inline keyboard for process status"""
@@ -697,6 +689,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
 
