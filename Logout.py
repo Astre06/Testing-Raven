@@ -169,9 +169,10 @@ def netflix_signout_all_devices_integrated(page, context):
             page.wait_for_load_state("networkidle", timeout=10000)
 
             # Locate the "Sign Out of All Devices" button (anchor with class soad-button)
-            signout_all = page.locator("a.soad-button, button.soad-button")
+            signout_all = page.locator("a.soad-button, button.soad-button, .soad-button[role='button']")
 
-            if signout_all.count() > 0:
+            try:
+                signout_all.first.wait_for(state="visible", timeout=10000)
                 signout_all.first.click(timeout=5000)
                 log("[🖱️] Clicked 'Sign Out of All Devices' (soad-button)")
 
@@ -688,6 +689,7 @@ if __name__ == "__main__":
             print("LIVE UPDATE:", update)
     else:
         print(f"Results saved to: {results}")
+
 
 
 
