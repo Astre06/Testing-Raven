@@ -186,12 +186,12 @@ class NetflixCookieChecker:
                 
                 try:
                     plan_element = page.locator('h3:has-text("plan")').first
-                    plan_text = plan_element.inner_text(timeout=3000).strip()
+                    plan_text = plan_element.inner_text(timeout=500).strip()
                     info['plan'] = plan_text.replace('plan', '').strip()
                 except Exception:
                     try:
                         plan_element = page.locator('[data-uia="plan-label"] b').first
-                        info['plan'] = plan_element.inner_text(timeout=3000).strip()
+                        info['plan'] = plan_element.inner_text(timeout=1000).strip()
                     except Exception as e:
                         log(f"Could not find plan information. Error: {e}")
 
@@ -200,7 +200,7 @@ class NetflixCookieChecker:
                 
                 try:
                     email_element = page.locator('[data-uia="account-email"]')
-                    info['email'] = email_element.inner_text(timeout=3000).strip()
+                    info['email'] = email_element.inner_text(timeout=500).strip()
                 except Exception as e:
                     log(f"Could not find email information. Error: {e}")
 
@@ -515,3 +515,4 @@ if __name__ == "__main__":
     results = main(test_files)
     if results:
         print(f"Results saved to: {results}")
+
