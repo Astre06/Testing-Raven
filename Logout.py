@@ -255,7 +255,7 @@ class NetflixCookieChecker:
                 
                 try:
                     email_element = page.locator('[data-uia="account-email"]')
-                    info['email'] = email_element.inner_text(timeout=1000).strip()
+                    info['email'] = email_element.inner_text(timeout=500).strip()
                 except Exception as e:
                     log(f"Could not find email information. Error: {e}")
 
@@ -679,6 +679,7 @@ if __name__ == "__main__":
             print("LIVE UPDATE:", update)
     else:
         print(f"Results saved to: {results}")
+
 
 
 
