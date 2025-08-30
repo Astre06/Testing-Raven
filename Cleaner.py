@@ -207,5 +207,17 @@ def cleanup_directory(directory: str):
         logging.info(f"🗑️ Cleaned up directory: {directory}")
     except Exception as e:
         logging.error(f"⚠️ Failed to clean directory {directory}: {e}")
+def cleanup_raw_files(directory: str):
+    """Remove all .raw files in a directory tree."""
+    try:
+        for root, _, files in os.walk(directory):
+            for f in files:
+                if f.endswith(".raw"):
+                    file_path = os.path.join(root, f)
+                    os.remove(file_path)
+                    logging.info(f"🗑️ Removed leftover raw file: {file_path}")
+    except Exception as e:
+        logging.error(f"⚠️ Failed to cleanup raw files in {directory}: {e}")
+
 
 
