@@ -641,7 +641,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
 def main():
     """Main function to run the bot"""
     # Replace with your bot token
-    TOKEN = "8270743184:AAHVzV-KqO7kRpKo2l-cWrBF1vWZ5rNw9sY"
+    TOKEN = "8270743184:AAFAKRM6lgN_PMA2wJLCMjaTcmhTG065wWw"
 
     if TOKEN == "TOKEN":
         print("❌ Please set your bot token in the main() function")
@@ -689,5 +689,6 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
