@@ -169,30 +169,24 @@ def netflix_signout_all_devices_integrated(page, context):
             page.wait_for_load_state("networkidle", timeout=10000)
 
             # Try to locate the main "Sign Out of All Devices" button
-            signout_all = page.locator("a.soad-button, button.soad-button, .soad-button[role='button']")
-
+            signout_all = page.locator("a.soad-button[role='button']:not([href]), button.soad-button")
+            
             if signout_all.count() > 0:
-                try:
-                    signout_all.first.wait_for(state="visible", timeout=10000)
-                    signout_all.first.click(timeout=5000)
-                    log("[🖱️] Clicked 'Sign Out of All Devices' (.soad-button)")
-                except Exception as e:
-                    log(f"[⚠️] Found main button but failed to click: {e}")
+                signout_all.first.wait_for(state="visible", timeout=10000)
+                signout_all.first.click(timeout=5000)
+                log("[🖱️] Clicked 'Sign Out of All Devices'")
                 
-                # Locate confirmation button by stable data-uia
+                # Confirmation button
                 confirm = page.locator('[data-uia="btn-sign-out"]')
                 if confirm.count() > 0:
-                    try:
-                        confirm.first.wait_for(state="visible", timeout=8000)
-                        confirm.first.click(timeout=5000, force=True)
-                        log("[✅] Confirmed sign-out (btn-sign-out)")
-                    except Exception as e:
-                        log(f"[⚠️] Found confirmation button but failed to click: {e}")
+                    confirm.first.wait_for(state="visible", timeout=8000)
+                    confirm.first.click(timeout=5000, force=True)
+                    log("[✅] Confirmed sign-out (btn-sign-out)")
                 else:
                     log("[⚠️] Confirmation button not found after clicking main button")
-
             else:
                 log("[⚠️] Could not find main sign-out button (.soad-button)")
+
             
             # Wait for process to complete
             page.wait_for_load_state("networkidle", timeout=10000)
@@ -696,6 +690,7 @@ if __name__ == "__main__":
             print("LIVE UPDATE:", update)
     else:
         print(f"Results saved to: {results}")
+
 
 
 
