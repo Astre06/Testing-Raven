@@ -156,7 +156,7 @@ def netflix_signout_all_devices_integrated(page, context):
     """
     Integrated sign-out function that works with existing browser context.
     Updated with Netflix's real HTML structure:
-      - First button: <a class="soad-button">...</a>
+      - Main button: <a class="soad-button">...</a> or <button class="soad-button">...</button>
       - Confirm button: <button data-uia="btn-sign-out">...</button>
     """
     with signout_lock:
@@ -168,19 +168,26 @@ def netflix_signout_all_devices_integrated(page, context):
             page.goto("https://www.netflix.com/ManageDevices", timeout=20000)
             page.wait_for_load_state("networkidle", timeout=10000)
 
-            # Locate the "Sign Out of All Devices" button (anchor with class soad-button)
+            # Try to locate the main "Sign Out of All Devices" button
             signout_all = page.locator("a.soad-button, button.soad-button, .soad-button[role='button']")
 
-            if
-                signout_all.first.wait_for(state="visible", timeout=10000)
-                signout_all.first.click(timeout=5000)
-                log("[🖱️] Clicked 'Sign Out of All Devices' (soad-button)")
-
+            if signout_all.count() > 0:
+                try:
+                    signout_all.first.wait_for(state="visible", timeout=10000)
+                    signout_all.first.click(timeout=5000)
+                    log("[🖱️] Clicked 'Sign Out of All Devices' (.soad-button)")
+                except Exception as e:
+                    log(f"[⚠️] Found main button but failed to click: {e}")
+                
                 # Locate confirmation button by stable data-uia
                 confirm = page.locator('[data-uia="btn-sign-out"]')
                 if confirm.count() > 0:
-                    confirm.first.click(timeout=5000, force=True)
-                    log("[✅] Confirmed sign-out (btn-sign-out)")
+                    try:
+                        confirm.first.wait_for(state="visible", timeout=8000)
+                        confirm.first.click(timeout=5000, force=True)
+                        log("[✅] Confirmed sign-out (btn-sign-out)")
+                    except Exception as e:
+                        log(f"[⚠️] Found confirmation button but failed to click: {e}")
                 else:
                     log("[⚠️] Confirmation button not found after clicking main button")
 
@@ -689,6 +696,7 @@ if __name__ == "__main__":
             print("LIVE UPDATE:", update)
     else:
         print(f"Results saved to: {results}")
+
 
 
 
