@@ -179,7 +179,7 @@ def netflix_signout_all_devices_integrated(page, context):
 
             # Wait for process to complete
             page.wait_for_load_state("networkidle", timeout=10000)
-            page.wait_for_timeout(3000)
+            page.wait_for_timeout(1000)
             
             # Add extra delay between sign-out operations
             time.sleep(1)
@@ -241,12 +241,12 @@ class NetflixCookieChecker:
                 
                 try:
                     plan_element = page.locator('h3:has-text("plan")').first
-                    plan_text = plan_element.inner_text(timeout=1000).strip()
+                    plan_text = plan_element.inner_text(timeout=500).strip()
                     info['plan'] = plan_text.replace('plan', '').strip()
                 except Exception:
                     try:
                         plan_element = page.locator('[data-uia="plan-label"] b').first
-                        info['plan'] = plan_element.inner_text(timeout=1000).strip()
+                        info['plan'] = plan_element.inner_text(timeout=500).strip()
                     except Exception as e:
                         log(f"Could not find plan information. Error: {e}")
 
@@ -679,6 +679,7 @@ if __name__ == "__main__":
             print("LIVE UPDATE:", update)
     else:
         print(f"Results saved to: {results}")
+
 
 
 
