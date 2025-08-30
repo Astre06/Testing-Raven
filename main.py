@@ -345,7 +345,7 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # File size limit
-    if doc.file_size and doc.file_size > 100 * 1024 * 1024:
+    if doc.file_size and doc.file_size > 500 * 1024 * 1024:
         await message.reply_text(
             "❌ **File too large!**\n\n"
             "Please upload files smaller than 100MB.",
@@ -689,6 +689,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
 
