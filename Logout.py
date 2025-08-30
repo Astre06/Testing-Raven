@@ -246,7 +246,7 @@ class NetflixCookieChecker:
                 except Exception:
                     try:
                         plan_element = page.locator('[data-uia="plan-label"] b').first
-                        info['plan'] = plan_element.inner_text(timeout=5000).strip()
+                        info['plan'] = plan_element.inner_text(timeout=1000).strip()
                     except Exception as e:
                         log(f"Could not find plan information. Error: {e}")
 
@@ -679,6 +679,7 @@ if __name__ == "__main__":
             print("LIVE UPDATE:", update)
     else:
         print(f"Results saved to: {results}")
+
 
 
 
