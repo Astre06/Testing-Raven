@@ -144,11 +144,25 @@ class NetflixCookieChecker:
         }
 
         try:
-            login_check_response = requests.get('https://www.netflix.com/ManageProfiles', headers=headers, cookies=cookie_dict, timeout=10)
-            if 'Sign In' in login_check_response.text or 'login' in login_check_response.url.lower():
+            login_check_response = requests.get(
+                'https://www.netflix.com/ManageProfiles',
+                headers=headers,
+                cookies=cookie_dict,
+                timeout=10
+            )
+            
+            html = login_check_response.text.lower()
+            url = login_check_response.url.lower()
+            
+            # 1️⃣ Invalid if redirected or "sign in" form present
+            if "login" in url or "sign in" in html or "sign in to netflix" in html:
                 return False, {"error": "Invalid Cookie (Login Failed)"}
-            if "profilesGate" in login_check_response.url:
+            
+            # 2️⃣ NEW: Profile selection page detection
+            if "profilesgate" in url or 'data-uia="profile-button"' in html:
                 log("👤 Profile selection detected, proceeding...")
+                # just continue
+
         except requests.RequestException as e:
             return False, {"error": f"Connection Error: {e}"}
 
@@ -513,6 +527,7 @@ if __name__ == "__main__":
     results = main(test_files)
     if results:
         print(f"Results saved to: {results}")
+
 
 
 
