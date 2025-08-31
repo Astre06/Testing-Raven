@@ -144,7 +144,7 @@ class NetflixCookieChecker:
         }
 
         try:
-            login_check_response = requests.get('https://www.netflix.com/browse', headers=headers, cookies=cookie_dict, timeout=10)
+            login_check_response = requests.get('https://www.netflix.com/ManageProfiles', headers=headers, cookies=cookie_dict, timeout=10)
             if 'Sign In' in login_check_response.text or 'login' in login_check_response.url.lower():
                 return False, {"error": "Invalid Cookie (Login Failed)"}
             if "profilesGate" in login_check_response.url:
@@ -513,5 +513,6 @@ if __name__ == "__main__":
     results = main(test_files)
     if results:
         print(f"Results saved to: {results}")
+
 
 
