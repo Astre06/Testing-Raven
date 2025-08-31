@@ -173,11 +173,20 @@ class NetflixCookieChecker:
                 context.add_cookies(playwright_cookies)
                 
                 page = context.new_page()
-                page.goto('https://www.netflix.com/browse', timeout=25000, wait_until='domcontentloaded')
+                page.goto('https://www.netflix.com/ManageProfiles', timeout=25000)
                 
-                # If the URL is the login page, the cookie is invalid.
+                # Wait 2 seconds
+                page.wait_for_timeout(2000)
+                
+                # Check current URL
                 if "login" in page.url or "signup" in page.url:
                     return False, {"error": "Invalid Cookie (Redirected to Login)"}
+                
+                if "manageprofiles" in page.url.lower():
+                    log("✅ Stayed on ManageProfiles → Valid cookie")
+                else:
+                    return False, {"error": "Invalid Cookie (Unexpected Redirect)"}
+
                 
                 info = {'email': 'N/A', 'plan': 'N/A', 'country': 'N/A', 'extra_member': 'false'}
 
@@ -515,4 +524,5 @@ if __name__ == "__main__":
     results = main(test_files)
     if results:
         print(f"Results saved to: {results}")
+
 
