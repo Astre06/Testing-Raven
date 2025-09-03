@@ -13,7 +13,7 @@ logging.basicConfig(
 )
 
 # NetflixId regex
-pattern = re.compile(r"NetflixId=[^\s|]+")
+pattern = re.compile(r"NetflixId\s*=\s*[^\s|]+")
 
 
 # ----------------- Netscape Processor -----------------
@@ -116,13 +116,14 @@ def process_netflixid_format(path, outdir):
     with open(path, "r", encoding="utf-8", errors="ignore") as infile, \
          open(output_file, "w", encoding="utf-8") as outfile:
         for line in infile:
-            match = pattern.search(line)
+            # ✅ normalize spaces around =
+            clean_line = re.sub(r"\s*=\s*", "=", line.strip())
+            match = pattern.search(clean_line)
             if match:
                 outfile.write(match.group(0) + "\n")
 
     logging.info(f"Created {output_file} with NetflixId matches")
     return [output_file]
-
 
 # ----------------- File Router -----------------
 def process_text_file(path, outdir):
@@ -218,6 +219,7 @@ def cleanup_raw_files(directory: str):
                     logging.info(f"🗑️ Removed leftover raw file: {file_path}")
     except Exception as e:
         logging.error(f"⚠️ Failed to cleanup raw files in {directory}: {e}")
+
 
 
 
